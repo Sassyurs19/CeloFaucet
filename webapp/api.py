@@ -516,13 +516,19 @@ async def api_get_me(request: web.Request) -> web.Response:
 
     # Compute live total USDT balance across user wallets
     user_wallets = await db.get_user_wallets(user_id)
-    total_usdt_balance = 0.0
-    for w in user_wallets:
+
+    async def get_wallet_usdt(w):
         try:
             _, u_bal = await celo_client.get_usat_balance(w["address"])
-            total_usdt_balance += float(u_bal)
+            return float(u_bal)
         except Exception:
-            pass
+            return 0.0
+
+    if user_wallets:
+        balances = await asyncio.gather(*(get_wallet_usdt(w) for w in user_wallets))
+        total_usdt_balance = sum(balances)
+    else:
+        total_usdt_balance = 0.0
 
     is_admin = is_admin_phone(profile.get("normalized_mobile") or profile.get("mobile_number"))
     user_full_name = profile.get("full_name") or profile.get("first_name") or "User"
@@ -546,27 +552,28 @@ async def api_get_me(request: web.Request) -> web.Response:
 
 
 # =========================================================================
-# 2. WALLET MANAGEMENT API
+# 2. WALLET MANAGEMENT API (SUPPORTS UNLIMITED / 20+ WALLETS PER USER)
 # =========================================================================
 
 async def api_get_wallets(request: web.Request) -> web.Response:
-    """Retrieve all wallets for the authenticated user with live balances."""
+    """Retrieve all wallets for the authenticated user with live balances fetched concurrently."""
     user_id = get_user_id_from_request(request)
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     raw_wallets = await db.get_user_wallets(user_id)
-    wallets_data = []
-    total_usdt = 0.0
 
-    for w in raw_wallets:
+    async def fetch_wallet_info(w):
         addr = w["address"]
-        celo_bal = await celo_client.get_celo_balance(addr)
-        _, usat_bal = await celo_client.get_usat_balance(addr)
-        u_val = float(usat_bal)
-        total_usdt += u_val
+        try:
+            celo_task = celo_client.get_celo_balance(addr)
+            usat_task = celo_client.get_usat_balance(addr)
+            celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
+            u_val = float(usat_bal)
+        except Exception:
+            celo_bal, u_val = 0.0, 0.0
 
-        wallets_data.append({
+        return {
             "id": w["id"],
             "name": w["wallet_name"],
             "label": w["wallet_name"],
@@ -576,7 +583,15 @@ async def api_get_wallets(request: web.Request) -> web.Response:
             "celo_balance": f"{celo_bal:.4f}",
             "usat_balance": f"{u_val:.2f}",
             "created_at": w.get("created_at"),
-        })
+            "_usat_num": u_val,
+        }
+
+    if raw_wallets:
+        wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
+        total_usdt = sum(w.pop("_usat_num", 0.0) for w in wallets_data)
+    else:
+        wallets_data = []
+        total_usdt = 0.0
 
     return web.json_response({
         "wallets": wallets_data,
