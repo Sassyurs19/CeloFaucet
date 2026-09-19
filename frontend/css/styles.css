@@ -1381,4 +1381,103 @@ i[data-lucide], svg.lucide {
   .top-navbar .top-brand {
     display: none;
   }
+  .desktop-payments-table-card {
+    display: block !important;
+  }
+  .mobile-payments-cards-list {
+    display: none !important;
+  }
 }
+
+/* --- Mobile Responsive Navbar & Payment Views --- */
+@media (max-width: 768px) {
+  .top-navbar {
+    padding: 10px 14px;
+    gap: 8px;
+    min-height: 54px;
+  }
+  .top-brand {
+    font-size: 16px;
+    gap: 6px;
+  }
+  .top-brand .logo-badge {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .top-actions {
+    gap: 6px;
+  }
+  .top-actions .user-badge {
+    padding: 5px 10px;
+    font-size: 12px;
+    max-width: 140px;
+  }
+  .top-actions .user-badge span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Payment History Responsive Switches */
+  .desktop-payments-table-card {
+    display: none !important;
+  }
+  .mobile-payments-cards-list {
+    display: flex !important;
+  }
+}
+
+/* Payment Mobile Item Card */
+.payment-mobile-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pmc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pmc-amount {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--celo-green-dark);
+}
+
+.pmc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.pmc-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.pmc-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pmc-footer {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+

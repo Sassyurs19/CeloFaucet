@@ -95,11 +95,6 @@
           <span>USAT Pay</span>
         </div>
 
-        <div class="network-pill">
-          <span class="network-dot"></span>
-          <span>Celo Mainnet</span>
-        </div>
-
         <div class="top-actions">
           <div class="user-badge" id="top-user-pill" style="display:none;" onclick="app.navigateTo('profile')">
             <i data-lucide="user" class="icon-sm"></i>
@@ -266,14 +261,15 @@
               </select>
 
               <!-- Selected Wallet Detail -->
-              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:8px;">
-                <div>
-                  <span style="color:var(--text-muted);">Wallet:</span>
-                  <strong id="dash-selected-wallet-name" style="margin-left:4px; color:var(--text-primary);">Wallet</strong>
+              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(53, 208, 127, 0.08); border:1px solid rgba(53, 208, 127, 0.25); border-radius:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="badge badge-green" style="font-size:11px; text-transform:none;">Selected</span>
+                  <strong id="dash-selected-wallet-name" style="font-size:14px; color:var(--text-primary);">Wallet</strong>
+                  <span id="dash-selected-wallet-address" style="font-family:monospace; font-size:12px; color:var(--text-muted);">(0x...)</span>
                 </div>
-                <div>
-                  <span style="color:var(--text-muted);">Available:</span>
-                  <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); margin-left:4px;">0.00 USDT</strong>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span style="color:var(--text-muted); font-size:12px;">Available:</span>
+                  <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); font-size:14px; font-weight:700;">0.00 USDT</strong>
                 </div>
               </div>
             </div>
@@ -387,18 +383,52 @@
              VIEW 3: PAYMENTS HISTORY
              ========================================================= -->
         <section id="view-payments" class="view-section" style="display:none;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
             <div>
-              <h1>Payment History</h1>
-              <p class="description" style="margin:0;">All $2.00 USAT payments completed or processed on Celo Mainnet.</p>
+              <h1 style="font-size:24px; font-weight:800; margin-bottom:4px;">Payment History</h1>
+              <p class="description" style="margin:0;">Live on-chain USDT transfers and transaction receipts on Celo Mainnet.</p>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="app.loadPaymentsHistory()">
+            <button class="btn btn-secondary btn-sm" onclick="app.loadPaymentsHistory()" style="display:flex; align-items:center; gap:6px;">
               <i data-lucide="refresh-cw" class="icon-sm"></i>
               <span>Refresh</span>
             </button>
           </div>
 
-          <div class="card" style="padding:0; overflow:hidden;">
+          <!-- Payment Metrics Grid -->
+          <div class="payments-stats-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
+              <div style="width:40px; height:40px; border-radius:10px; background:rgba(53, 208, 127, 0.12); display:flex; align-items:center; justify-content:center; color:var(--celo-green-dark); flex-shrink:0;">
+                <i data-lucide="arrow-up-right" class="icon-md"></i>
+              </div>
+              <div style="overflow:hidden;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Total Transferred</div>
+                <div id="stat-payments-total-volume" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">$0.00 USDT</div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
+              <div style="width:40px; height:40px; border-radius:10px; background:rgba(59, 130, 246, 0.12); display:flex; align-items:center; justify-content:center; color:var(--accent-blue); flex-shrink:0;">
+                <i data-lucide="check-circle" class="icon-md"></i>
+              </div>
+              <div style="overflow:hidden;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Completed</div>
+                <div id="stat-payments-completed-count" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">0</div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
+              <div style="width:40px; height:40px; border-radius:10px; background:rgba(245, 158, 11, 0.12); display:flex; align-items:center; justify-content:center; color:#d97706; flex-shrink:0;">
+                <i data-lucide="fuel" class="icon-md"></i>
+              </div>
+              <div style="overflow:hidden;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Gas Subsidies</div>
+                <div id="stat-payments-gas-count" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Desktop Table View -->
+          <div class="card desktop-payments-table-card" style="padding:0; overflow:hidden;">
             <div class="table-responsive">
               <table class="data-table">
                 <thead>
@@ -406,10 +436,10 @@
                     <th>Status</th>
                     <th>Amount</th>
                     <th>From Wallet</th>
-                    <th>Receiving Destination</th>
+                    <th>Recipient Address</th>
                     <th>Transaction</th>
                     <th>Gas Subsidized</th>
-                    <th>Date</th>
+                    <th>Date & Time</th>
                   </tr>
                 </thead>
                 <tbody id="payments-table-body">
@@ -421,6 +451,11 @@
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <!-- Mobile Cards View (Responsive stream on mobile devices) -->
+          <div id="payments-mobile-cards-container" class="mobile-payments-cards-list" style="display:none; flex-direction:column; gap:10px;">
+            <!-- Loaded dynamically in app.js -->
           </div>
         </section>
 

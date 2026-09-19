@@ -869,9 +869,10 @@ const app = (function () {
       const opt = document.createElement('option');
       opt.value = w.id;
       const name = w.name || w.label || 'My Wallet';
+      const shortAddr = formatShortAddress(w.address);
       const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
-      // Display strictly the name the user kept and their available balance
-      opt.textContent = `${name} — Available: $${usdt} USDT`;
+      // Display: Wallet Name (0x...) — Available: X.XX USDT
+      opt.textContent = `${name} (${shortAddr}) — Available: ${usdt} USDT`;
       select.appendChild(opt);
     });
 
@@ -888,6 +889,7 @@ const app = (function () {
     const select = document.getElementById('select-send-wallet');
     const summaryBox = document.getElementById('dash-wallet-summary-box');
     const selectedNameEl = document.getElementById('dash-selected-wallet-name');
+    const selectedAddrEl = document.getElementById('dash-selected-wallet-address');
     const selectedBalEl = document.getElementById('dash-selected-wallet-balance');
     const amountHintEl = document.getElementById('amount-validation-hint');
 
@@ -906,10 +908,12 @@ const app = (function () {
 
     const name = wallet.name || wallet.label || 'My Wallet';
     const usat = parseFloat(wallet.usat_balance || 0);
+    const shortAddr = formatShortAddress(wallet.address);
 
     if (selectedNameEl) selectedNameEl.textContent = name;
+    if (selectedAddrEl) selectedAddrEl.textContent = `(${shortAddr})`;
     if (selectedBalEl) selectedBalEl.textContent = `${usat.toFixed(2)} USDT`;
-    if (amountHintEl) amountHintEl.textContent = `Available Balance: ${usat.toFixed(2)} USDT`;
+    if (amountHintEl) amountHintEl.textContent = `Available Balance: ${usat.toFixed(2)} USDT in ${name}`;
   }
 
   function setMaxAmount() {
@@ -982,10 +986,12 @@ const app = (function () {
   // --- Payment Execution Flow ---
 
   function openPaymentConfirmation() {
-    const wallet = state.wallets.find((w) => w.id === state.selectedWalletId);
+    const select = document.getElementById('select-send-wallet');
+    const selectedId = select && select.value ? parseInt(select.value, 10) : state.selectedWalletId;
+    const wallet = state.wallets.find((w) => String(w.id) === String(selectedId || state.selectedWalletId));
+
     if (!wallet) {
-      showToast('Please select a sending wallet first.', 'error');
-      const select = document.getElementById('select-send-wallet');
+      showToast('Please select a sending wallet first from the dropdown.', 'error');
       select?.focus();
       return;
     }
@@ -1000,7 +1006,7 @@ const app = (function () {
 
     const usatBal = parseFloat(wallet.usat_balance || 0);
     if (amountVal > usatBal) {
-      showToast(`Amount exceeds available balance (${usatBal.toFixed(2)} USDT).`, 'error');
+      showToast(`Amount (${amountVal.toFixed(2)} USDT) exceeds ${wallet.name || 'wallet'} balance (${usatBal.toFixed(2)} USDT).`, 'error');
       amountInput?.focus();
       return;
     }
@@ -1014,7 +1020,7 @@ const app = (function () {
     }
 
     if (recipientAddr.toLowerCase() === wallet.address.toLowerCase()) {
-      showToast('Recipient cannot be the same as your sending wallet address.', 'error');
+      showToast('Recipient address cannot be the same as your sending wallet address.', 'error');
       recipientInput?.focus();
       return;
     }
@@ -1550,11 +1556,27 @@ const app = (function () {
 
   async function loadPaymentsHistory() {
     const tbody = document.getElementById('payments-table-body');
+    const mobileContainer = document.getElementById('payments-mobile-cards-container');
     if (!tbody) return;
 
     try {
       const data = await apiRequest('/api/payments');
       const payments = data.payments || [];
+
+      // Update Top Metrics Cards
+      const totalVolume = payments
+        .filter((p) => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
+        .reduce((acc, p) => acc + parseFloat(p.amount || 0), 0);
+      const completedCount = payments.filter((p) => p.status === 'SUCCESS' || p.status === 'CONFIRMED').length;
+      const gasCount = payments.filter((p) => p.celo_funded).length;
+
+      const volEl = document.getElementById('stat-payments-total-volume');
+      const compEl = document.getElementById('stat-payments-completed-count');
+      const gasEl = document.getElementById('stat-payments-gas-count');
+
+      if (volEl) volEl.textContent = `$${totalVolume.toFixed(2)} USDT`;
+      if (compEl) compEl.textContent = completedCount.toString();
+      if (gasEl) gasEl.textContent = gasCount.toString();
 
       if (payments.length === 0) {
         tbody.innerHTML = `
@@ -1564,11 +1586,21 @@ const app = (function () {
             </td>
           </tr>
         `;
+        if (mobileContainer) {
+          mobileContainer.innerHTML = `
+            <div class="card" style="text-align:center; padding:32px; color:var(--text-muted);">
+              No payment transactions recorded yet.
+            </div>
+          `;
+        }
         return;
       }
 
-      let html = '';
+      let tableHtml = '';
+      let mobileHtml = '';
+
       payments.forEach((p) => {
+        const amtStr = parseFloat(p.amount || 0).toFixed(2);
         let statusBadge = '<span class="badge badge-warning">PROCESSING</span>';
         if (p.status === 'SUCCESS' || p.status === 'CONFIRMED') {
           statusBadge = '<span class="badge badge-green">SUCCESS</span>';
@@ -1587,12 +1619,13 @@ const app = (function () {
           ? '<span class="badge badge-green">0.05 CELO Gas</span>'
           : '<span style="color:var(--text-muted); font-size:12px;">Standard</span>';
 
-        const dateStr = p.created_at ? new Date(p.created_at).toLocaleString() : '-';
+        const dateStr = p.created_at ? new Date(p.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-';
 
-        html += `
+        // Desktop Table Row
+        tableHtml += `
           <tr>
             <td>${statusBadge}</td>
-            <td style="font-weight:700;">$${parseFloat(p.amount || 2.0).toFixed(2)} USAT</td>
+            <td style="font-weight:700; color:var(--celo-green-dark);">${amtStr} USDT</td>
             <td><span class="code-address">${formatShortAddress(p.from_address)}</span></td>
             <td><span class="code-address">${formatShortAddress(p.to_address)}</span></td>
             <td>${txLink}</td>
@@ -1600,9 +1633,52 @@ const app = (function () {
             <td style="font-size:12px; color:var(--text-muted);">${dateStr}</td>
           </tr>
         `;
+
+        // Mobile Card View
+        mobileHtml += `
+          <div class="payment-mobile-card">
+            <div class="pmc-header">
+              <span class="pmc-amount">${amtStr} USDT</span>
+              ${statusBadge}
+            </div>
+            <div class="pmc-row">
+              <span class="pmc-label">From:</span>
+              <span class="pmc-value">
+                <span class="code-address">${formatShortAddress(p.from_address)}</span>
+              </span>
+            </div>
+            <div class="pmc-row">
+              <span class="pmc-label">To:</span>
+              <span class="pmc-value">
+                <span class="code-address">${formatShortAddress(p.to_address)}</span>
+              </span>
+            </div>
+            <div class="pmc-row">
+              <span class="pmc-label">Gas Subsidy:</span>
+              <span class="pmc-value">${gasFundedBadge}</span>
+            </div>
+            <div class="pmc-row">
+              <span class="pmc-label">Date:</span>
+              <span style="font-size:11px; color:var(--text-muted);">${dateStr}</span>
+            </div>
+            ${p.tx_hash ? `
+            <div class="pmc-footer">
+              <a href="${CELO_EXPLORER_BASE}${p.tx_hash}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none;">
+                <span>View on Explorer</span>
+                <i data-lucide="external-link" class="icon-sm"></i>
+              </a>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.copyAddress('${p.tx_hash}')" title="Copy Tx Hash">
+                <i data-lucide="copy" class="icon-sm"></i>
+              </button>
+            </div>` : ''}
+          </div>
+        `;
       });
 
-      tbody.innerHTML = html;
+      tbody.innerHTML = tableHtml;
+      if (mobileContainer) {
+        mobileContainer.innerHTML = mobileHtml;
+      }
       renderIcons();
     } catch (err) {
       showToast('Failed to load history: ' + err.message, 'error');
@@ -2140,6 +2216,14 @@ const app = (function () {
     }
   }
 
+  function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.add('active');
+      renderIcons();
+    }
+  }
+
   function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.remove('active');
@@ -2214,6 +2298,7 @@ const app = (function () {
     openRenameWalletModal,
     submitRenameWallet,
     loadWallets,
+    openModal,
     closeModal,
   };
 })();
