@@ -37,9 +37,6 @@ USER_SESSIONS: dict[str, dict] = {}
 # admin_session_id -> { "is_admin": bool, "created_at": float }
 ADMIN_SESSIONS: set[str] = set()
 
-# Rate limiting: user_id -> list of timestamps
-WALLET_IMPORT_TRACKER: dict[int, list[float]] = {}
-
 # Login rate limiting: normalized_mobile -> list of failed attempt timestamps
 LOGIN_FAILED_ATTEMPTS: dict[str, list[float]] = {}
 MAX_LOGIN_ATTEMPTS = 5
@@ -507,20 +504,25 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
     if not is_val or not chk_addr:
         return web.json_response({"error": err_msg or "Invalid Celo address format."}, status=400)
 
-    # Check for duplicate
+    # If already added, update name/label if changed and return existing wallet
     existing = await db.get_user_wallets(user_id)
-    for w in existing:
-        if w["address"].lower() == chk_addr.lower():
-            return web.json_response({"error": "This wallet is already connected to your account."}, status=400)
-
-    w_id = await db.add_user_wallet(
-        telegram_id=user_id,
-        wallet_name=name,
-        address=chk_addr,
-        wallet_type="connected",
-        encrypted_private_key=None,
-        user_id=user_id,
-    )
+    existing_wallet = next((w for w in existing if w["address"].lower() == chk_addr.lower()), None)
+    if existing_wallet:
+        if name and name != existing_wallet["wallet_name"]:
+            await db.rename_user_wallet(existing_wallet["id"], user_id, name)
+            existing_wallet["wallet_name"] = name
+        w_id = existing_wallet["id"]
+        wallet_name = existing_wallet["wallet_name"]
+    else:
+        w_id = await db.add_user_wallet(
+            telegram_id=user_id,
+            wallet_name=name,
+            address=chk_addr,
+            wallet_type="connected",
+            encrypted_private_key=None,
+            user_id=user_id,
+        )
+        wallet_name = name
 
     celo_bal = await celo_client.get_celo_balance(chk_addr)
     _, usat_bal = await celo_client.get_usat_balance(chk_addr)
@@ -529,8 +531,8 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
         "success": True,
         "wallet": {
             "id": w_id,
-            "name": name,
-            "label": name,
+            "name": wallet_name,
+            "label": wallet_name,
             "address": chk_addr,
             "type": "connected",
             "wallet_type": "connected",
@@ -544,23 +546,11 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     """
     Import a wallet via private key (AES-256-GCM encrypted).
     Strictly rejects 12/24-word recovery phrases with required message.
-    Rate limited: max 3 attempts per 10 minutes per user.
+    Unlimited wallet additions allowed.
     """
     user_id = get_user_id_from_request(request)
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
-
-    # Rate limiting check (3 attempts per 10 min)
-    now = time.time()
-    attempts = WALLET_IMPORT_TRACKER.get(user_id, [])
-    # Keep attempts from last 10 minutes (600s)
-    valid_attempts = [t for t in attempts if now - t < 600]
-    if len(valid_attempts) >= 3:
-        return web.json_response({
-            "error": "Rate limit exceeded: maximum 3 wallet imports per 10 minutes. Please try again later."
-        }, status=429)
-
-    WALLET_IMPORT_TRACKER[user_id] = valid_attempts + [now]
 
     try:
         data = await request.json()
@@ -603,20 +593,25 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     formatted_key = None
     account = None
 
-    # Check for duplicate
+    # Check if wallet already exists for this user (allow re-import and update seamlessly)
     existing = await db.get_user_wallets(user_id)
-    for w in existing:
-        if w["address"].lower() == derived_address.lower():
-            return web.json_response({"error": "This wallet is already imported in your account."}, status=400)
-
-    w_id = await db.add_user_wallet(
-        telegram_id=user_id,
-        wallet_name=name,
-        address=derived_address,
-        wallet_type="imported",
-        encrypted_private_key=encrypted_key,
-        user_id=user_id,
-    )
+    existing_wallet = next((w for w in existing if w["address"].lower() == derived_address.lower()), None)
+    if existing_wallet:
+        if name and name != existing_wallet["wallet_name"]:
+            await db.rename_user_wallet(existing_wallet["id"], user_id, name)
+            existing_wallet["wallet_name"] = name
+        w_id = existing_wallet["id"]
+        wallet_name = existing_wallet["wallet_name"]
+    else:
+        w_id = await db.add_user_wallet(
+            telegram_id=user_id,
+            wallet_name=name,
+            address=derived_address,
+            wallet_type="imported",
+            encrypted_private_key=encrypted_key,
+            user_id=user_id,
+        )
+        wallet_name = name
 
     celo_bal = await celo_client.get_celo_balance(derived_address)
     _, usat_bal = await celo_client.get_usat_balance(derived_address)
@@ -625,8 +620,8 @@ async def api_import_wallet(request: web.Request) -> web.Response:
         "success": True,
         "wallet": {
             "id": w_id,
-            "name": name,
-            "label": name,
+            "name": wallet_name,
+            "label": wallet_name,
             "address": derived_address,
             "type": "imported",
             "wallet_type": "imported",
