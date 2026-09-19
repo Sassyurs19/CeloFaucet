@@ -501,6 +501,24 @@ class Database:
             "total_paid": round(total_paid, 2),
         }
 
+    async def reset_all_users_and_wallets(self) -> dict[str, Any]:
+        """Completely wipe all user accounts, user_wallets, payments, and claims to start fresh."""
+        async with self.connect() as conn:
+            await conn.execute("DELETE FROM usat_payments;")
+            await conn.execute("DELETE FROM user_wallets;")
+            await conn.execute("DELETE FROM claims;")
+            await conn.execute("DELETE FROM users;")
+            try:
+                await conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('users', 'user_wallets', 'usat_payments', 'claims');")
+            except Exception:
+                pass
+            await conn.commit()
+            try:
+                await conn.execute("VACUUM;")
+            except Exception:
+                pass
+        return {"success": True, "message": "All user accounts, wallets, and payments successfully cleared."}
+
     # --- Wallet Management (Dual Wallet: connected or imported) ---
 
     async def add_user_wallet(

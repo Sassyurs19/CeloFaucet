@@ -6,6 +6,18 @@
  */
 
 const app = (function () {
+  // Global Fresh Start Version: Cleans up all previous stale device caches, vaults, and ghost accounts
+  const FRESH_START_EPOCH = 'v2_fresh_clean_2026';
+  try {
+    if (localStorage.getItem('celo_app_epoch') !== FRESH_START_EPOCH) {
+      console.log('Starting fresh dashboard: clearing all local caches...');
+      localStorage.clear();
+      localStorage.setItem('celo_app_epoch', FRESH_START_EPOCH);
+    }
+  } catch (e) {
+    console.warn('Could not verify/reset localStorage epoch:', e);
+  }
+
   const STORAGE_KEY_TOKEN = 'usat_session_token';
   const STORAGE_KEY_ADMIN = 'usat_admin_token';
   const CELO_EXPLORER_BASE = 'https://celoscan.io/tx/';
@@ -2393,6 +2405,24 @@ const app = (function () {
     }
   }
 
+  async function adminResetAllData() {
+    if (!confirm('⚠️ DANGER: This will permanently wipe ALL user accounts, wallets, and payment history from the database to restart a 100% fresh dashboard.\n\nAre you sure you want to proceed?')) {
+      return;
+    }
+
+    try {
+      showToast('Wiping all user accounts and resetting database...', 'info');
+      await apiRequest('/api/admin/reset-database', { method: 'POST' });
+      localStorage.clear();
+      showToast('Database wiped successfully! Reloading fresh dashboard...', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err) {
+      showToast('Reset failed: ' + err.message, 'error');
+    }
+  }
+
   return {
     init,
     configureApiUrl,
@@ -2421,6 +2451,7 @@ const app = (function () {
     loadAdminView,
     handleAdminLogin,
     handleAdminTogglePause,
+    adminResetAllData,
     switchAdminTab,
     debounceAdminSearch,
     triggerAdminPaymentsFilter,

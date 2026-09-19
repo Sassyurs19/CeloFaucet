@@ -37,6 +37,20 @@ async def on_startup(app: web.Application) -> None:
     await db.init_db()
     logger.info("Database initialized successfully.")
 
+    # Fresh Start: Ensure all previous test accounts, wallets, and payments are cleared
+    db_dir = os.path.dirname(config.database_path) or "data"
+    os.makedirs(db_dir, exist_ok=True)
+    reset_marker = os.path.join(db_dir, ".fresh_start_v2_done")
+    if not os.path.exists(reset_marker):
+        logger.info("Fresh start requested: wiping previous accounts, wallets, and payments...")
+        await db.reset_all_users_and_wallets()
+        try:
+            with open(reset_marker, "w") as f:
+                f.write("done\n")
+            logger.info("Fresh start complete: database is 100% clean and ready.")
+        except Exception as e:
+            logger.warning("Could not create reset marker: %s", e)
+
     logger.info("Verifying Celo Mainnet RPC connection (%s)...", config.celo_rpc_url)
     connected, net_msg = await celo_client.verify_network()
     if connected:

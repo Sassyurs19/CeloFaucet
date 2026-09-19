@@ -1578,6 +1578,16 @@ async def api_admin_toggle_pause(request: web.Request) -> web.Response:
     return web.json_response({"paused": new_state})
 
 
+async def api_admin_reset_database(request: web.Request) -> web.Response:
+    """Admin endpoint to completely wipe all user accounts, wallets, and payments to start fresh."""
+    if not is_admin_request(request):
+        return web.json_response({"error": "Unauthorized: Admin privileges required."}, status=401)
+
+    result = await db.reset_all_users_and_wallets()
+    logger.info("Admin triggered complete database reset: all users, wallets, and payments wiped.")
+    return web.json_response(result)
+
+
 # --- Mount API Routes onto Application ---
 
 def register_api_routes(app: web.Application) -> None:
@@ -1621,3 +1631,4 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/funding", api_admin_get_funding)
     app.router.add_get("/api/admin/funding/transactions", api_admin_get_funding_transactions)
     app.router.add_post("/api/admin/settings/pause", api_admin_toggle_pause)
+    app.router.add_post("/api/admin/reset-database", api_admin_reset_database)
