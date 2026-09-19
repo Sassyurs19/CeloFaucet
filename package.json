@@ -1,0 +1,21 @@
+{
+  "name": "celo-usdt-app",
+  "version": "1.0.0",
+  "description": "CELO USDT Payment Web Application with Celo Mainnet integration and auto gas subsidies",
+  "main": "server.py",
+  "scripts": {
+    "start": "python server.py",
+    "build": "pip install -r requirements.txt",
+    "test": "python tests/verify_web_api.py"
+  },
+  "keywords": [
+    "celo",
+    "usdt",
+    "web3",
+    "faucet",
+    "render",
+    "firebase"
+  ],
+  "author": "Sassy",
+  "license": "MIT"
+}

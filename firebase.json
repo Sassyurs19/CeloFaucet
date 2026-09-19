@@ -1,0 +1,25 @@
+﻿{
+  "hosting": {
+    "public": "frontend",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/connect",
+        "destination": "/connect.html"
+      },
+      {
+        "source": "/pay",
+        "destination": "/pay.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

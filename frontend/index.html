@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CELO USAT Payment Portal — $2.00 USAT</title>
+  <meta name="description" content="Make fixed $2.00 USAT payments on Celo Mainnet with automated CELO gas subsidies and dual wallet support.">
+  
+  <!-- Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Light Theme Stylesheet -->
+  <link rel="stylesheet" href="/css/styles.css">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><path d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'></path><path d='M12 18V6'></path></svg>">
+  <link rel="shortcut icon" href="/favicon.ico">
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <div class="app-wrapper">
+    <!-- Desktop Sidebar -->
+    <aside class="desktop-sidebar" id="main-desktop-sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-badge">CELO</span>
+        <span>USAT Pay</span>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <!-- Main Navigation Group -->
+        <a class="nav-item active" data-view="dashboard" id="nav-desktop-dashboard" onclick="app.navigateTo('dashboard')">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </a>
+        <a class="nav-item" data-view="wallets" id="nav-desktop-wallets" onclick="app.navigateTo('wallets')">
+          <i data-lucide="wallet-cards"></i>
+          <span>Wallets</span>
+        </a>
+        <a class="nav-item" data-view="payments" id="nav-desktop-payments" onclick="app.navigateTo('payments')">
+          <i data-lucide="arrow-left-right"></i>
+          <span>Payments</span>
+        </a>
+
+        <!-- Divider 1 -->
+        <div class="sidebar-divider"></div>
+
+        <!-- Account Group -->
+        <a class="nav-item" data-view="profile" id="nav-desktop-profile" onclick="app.navigateTo('profile')">
+          <i data-lucide="user"></i>
+          <span>Profile</span>
+        </a>
+        <a class="nav-item" data-view="settings" id="nav-desktop-settings" onclick="app.navigateTo('profile')">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </a>
+
+        <!-- Admin Portal Item (Shown only for eligible admin 8142177207) -->
+        <a class="nav-item" data-view="admin" id="nav-desktop-admin" style="display:none;" onclick="app.navigateTo('admin')">
+          <i data-lucide="shield"></i>
+          <span>Admin Portal</span>
+        </a>
+
+        <!-- Divider 2 -->
+        <div class="sidebar-divider"></div>
+
+        <!-- Logout Group -->
+        <a class="nav-item" id="nav-desktop-logout" onclick="app.handleLogout()" style="color:var(--text-muted);">
+          <i data-lucide="log-out"></i>
+          <span>Logout</span>
+        </a>
+      </nav>
+
+      <div class="card-surface" style="padding: 12px; margin-top: auto; font-size: 12px;">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; font-weight:600; color:var(--celo-green-dark);">
+          <span class="network-dot"></span> Celo Mainnet
+        </div>
+        <div style="color:var(--text-muted); font-size:11px;">Fixed $2.00 USAT | Chain 42220</div>
+      </div>
+    </aside>
+
+    <!-- Main Content Body -->
+    <div class="main-content">
+      <!-- Top Sticky Navbar -->
+      <header class="top-navbar">
+        <div class="top-brand">
+          <span class="logo-badge">CELO</span>
+          <span>USAT Pay</span>
+        </div>
+
+        <div class="network-pill">
+          <span class="network-dot"></span>
+          <span>Celo Mainnet</span>
+        </div>
+
+        <div class="top-actions">
+          <div class="user-badge" id="top-user-pill" style="display:none;" onclick="app.navigateTo('profile')">
+            <i data-lucide="user" class="icon-sm"></i>
+            <span id="top-user-name">User</span>
+          </div>
+          <!-- Admin Access Button (Shown only for Sasidhar 8142177207) -->
+          <button class="btn btn-secondary btn-sm" id="btn-top-admin" style="display:none;" onclick="app.navigateTo('admin')">
+            <i data-lucide="shield" class="icon-sm"></i>
+            <span>Admin</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Container with Switchable Views -->
+      <main class="container">
+        
+        <!-- =========================================================
+             VIEW 0: AUTH / CREATE ACCOUNT & LOGIN
+             ========================================================= -->
+        <section id="view-auth" class="view-section" style="display:none; max-width: 460px; margin: 30px auto;">
+          <!-- Card A: Create Account -->
+          <div id="auth-card-register" class="card" style="padding: 32px 24px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span class="logo-badge" style="font-size: 14px; padding: 5px 14px;">CELO USAT</span>
+              <h1 style="margin-top: 14px; font-size: 24px;">Create Account</h1>
+              <p class="description" style="margin-top: 4px;">Welcome to CELO USAT. Create your account to manage your wallets and payments.</p>
+            </div>
+
+            <div id="reg-error-alert" style="display:none; margin-bottom:16px; padding:10px 14px; border-radius:var(--radius-md); background:var(--danger-subtle); color:var(--danger); font-size:13px; font-weight:500;"></div>
+
+            <form id="form-auth-register" onsubmit="app.handleAuthRegister(event)">
+              <div class="form-group">
+                <label class="form-label" for="reg-name">Full Name</label>
+                <input type="text" id="reg-name" class="form-input" placeholder="Enter your full name" required minlength="2" maxlength="80">
+                <div class="form-help">2 to 80 characters (letters, spaces, hyphens).</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="reg-mobile">Mobile Number</label>
+                <input type="tel" id="reg-mobile" class="form-input" placeholder="Enter your mobile number" required>
+                <div class="form-help">e.g. 9876543210 or +919876543210. No OTP or SMS required.</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="reg-password">Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="reg-password" class="form-input" placeholder="Create a password" required minlength="8">
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('reg-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+                <div class="form-help">At least 8 characters with letters and numbers.</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="reg-confirm-password">Confirm Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="reg-confirm-password" class="form-input" placeholder="Confirm your password" required minlength="8">
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('reg-confirm-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-lg" id="btn-auth-submit" style="margin-top: 8px;">
+                Create Account
+              </button>
+            </form>
+
+            <p style="text-align:center; font-size:13px; margin-top:20px; color:var(--text-secondary);">
+              Already have an account? <a href="#" onclick="app.switchAuthMode('login'); return false;" style="color:var(--accent-blue); font-weight:600; text-decoration:none;">Login</a>
+            </p>
+
+            <div class="card-surface" style="margin-top: 20px; padding: 12px 14px; font-size: 12px; color: var(--text-secondary);">
+              <div style="font-weight: 600; color: var(--celo-green-dark); margin-bottom: 3px; display:flex; align-items:center; gap:4px;">
+                <i data-lucide="check-circle" class="icon-sm"></i> Instant Activation
+              </div>
+              Your account is active immediately upon registration. No SMS or email verification codes needed.
+            </div>
+          </div>
+
+          <!-- Card B: Login -->
+          <div id="auth-card-login" class="card" style="display:none; padding: 32px 24px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span class="logo-badge" style="font-size: 14px; padding: 5px 14px;">CELO USAT</span>
+              <h1 style="margin-top: 14px; font-size: 24px;">Welcome Back</h1>
+              <p class="description" style="margin-top: 4px;">Login to your CELO USAT account to access your wallets and payments.</p>
+            </div>
+
+            <div id="login-error-alert" style="display:none; margin-bottom:16px; padding:10px 14px; border-radius:var(--radius-md); background:var(--danger-subtle); color:var(--danger); font-size:13px; font-weight:500;"></div>
+
+            <form id="form-auth-login" onsubmit="app.handleAuthLogin(event)">
+              <div class="form-group">
+                <label class="form-label" for="login-mobile">Mobile Number</label>
+                <input type="tel" id="login-mobile" class="form-input" placeholder="Enter your mobile number" required>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="login-password">Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="login-password" class="form-input" placeholder="Enter your password" required>
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('login-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-lg" id="btn-login-submit" style="margin-top: 8px;">
+                Login
+              </button>
+            </form>
+
+            <p style="text-align:center; font-size:13px; margin-top:20px; color:var(--text-secondary);">
+              Don't have an account? <a href="#" onclick="app.switchAuthMode('register'); return false;" style="color:var(--accent-blue); font-weight:600; text-decoration:none;">Create Account</a>
+            </p>
+
+            <div class="card-surface" style="margin-top: 20px; padding: 12px 14px; font-size: 12px; color: var(--text-secondary); text-align: center;">
+              <strong>Forgot Password?</strong> Password recovery is unavailable because this account does not use phone or email verification.
+            </div>
+            <div style="text-align:center; margin-top:12px;">
+              <a href="#" onclick="app.configureApiUrl(); return false;" style="font-size:12px; color:var(--text-muted); text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                <i data-lucide="settings" class="icon-sm"></i> Backend API Settings
+              </a>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- =========================================================
+             VIEW 1: DASHBOARD / MAKE PAYMENT (SIMPLE & CLEAN)
+             ========================================================= -->
+        <section id="view-dashboard" class="view-section">
+          <!-- Minimal Top Header Section -->
+          <div style="margin-bottom: 20px;">
+            <h1 class="dash-greeting">Welcome back, <span id="dash-user-name">User</span></h1>
+            <p class="dash-subtitle">Make your $2.00 USDT payment quickly and securely.</p>
+          </div>
+
+          <!-- Simple Clean Payment Card -->
+          <div class="pay-card-clean">
+            <!-- Amount & Hero Section -->
+            <div class="pay-amount-hero">
+              <div class="pay-amount-label">Transfer USDT</div>
+              <div class="pay-amount-value" id="dash-hero-amount-display">
+                <span id="dash-display-amount">0.00</span> <span>USDT</span>
+              </div>
+              <div style="font-size:12px; color:var(--text-muted); margin-top:6px; font-weight:500;">
+                Celo Mainnet (Chain ID 42220) &bull; Auto Gas Subsidized
+              </div>
+            </div>
+
+            <!-- Field 1: Sending Wallet -->
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <label class="form-label" style="margin:0; font-size:13px; font-weight:600;">1. From Wallet</label>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openAddWalletModal()" style="padding:4px 10px; font-size:12px;">
+                  <i data-lucide="plus" class="icon-sm"></i>
+                  <span>Add Wallet</span>
+                </button>
+              </div>
+
+              <select id="select-send-wallet" class="form-input" onchange="app.handleWalletSelected()" style="font-size:14px; font-weight:600;">
+                <option value="">-- Choose your wallet --</option>
+              </select>
+
+              <!-- Selected Wallet Detail -->
+              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:8px;">
+                <div>
+                  <span style="color:var(--text-muted);">Wallet:</span>
+                  <strong id="dash-selected-wallet-name" style="margin-left:4px; color:var(--text-primary);">Wallet</strong>
+                </div>
+                <div>
+                  <span style="color:var(--text-muted);">Available:</span>
+                  <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); margin-left:4px;">0.00 USDT</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Field 2: USDT Amount -->
+            <div class="form-group" style="margin-top:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" for="input-transfer-amount" style="margin:0; font-size:13px; font-weight:600;">2. USDT Amount</label>
+                <button type="button" class="btn-max-amount" id="btn-amount-max" onclick="app.setMaxAmount()" style="background:rgba(53, 208, 127, 0.15); color:var(--celo-green-dark); border:none; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:700; cursor:pointer;">
+                  USE MAX
+                </button>
+              </div>
+              <div style="position:relative;">
+                <input
+                  type="number"
+                  id="input-transfer-amount"
+                  class="form-input"
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0.01"
+                  oninput="app.handleAmountChanged()"
+                  style="font-size:16px; font-weight:700; padding-right:70px;"
+                  required
+                />
+                <span style="position:absolute; right:14px; top:50%; transform:translateY(-50%); font-weight:700; color:var(--text-muted); font-size:13px; pointer-events:none;">
+                  USDT
+                </span>
+              </div>
+              <div id="amount-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                Maximum: Available wallet USDT balance.
+              </div>
+            </div>
+
+            <!-- Field 3: Recipient Address -->
+            <div class="form-group" style="margin-top:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" for="input-recipient-address" style="margin:0; font-size:13px; font-weight:600;">3. Recipient Celo Address</label>
+                <span id="recipient-format-badge" class="badge" style="display:none; font-size:11px;">Valid EVM</span>
+              </div>
+              <input
+                type="text"
+                id="input-recipient-address"
+                class="form-input"
+                placeholder="0x..."
+                maxlength="42"
+                spellcheck="false"
+                autocomplete="off"
+                oninput="app.handleRecipientChanged()"
+                style="font-family:monospace; font-size:13px;"
+                required
+              />
+              <div id="recipient-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                Enter a 42-character Celo/EVM address starting with 0x.
+              </div>
+            </div>
+
+            <!-- Review & Pay Button -->
+            <div style="margin-top: 24px;">
+              <button class="btn btn-primary btn-lg" id="btn-pay-now" onclick="app.openPaymentConfirmation()" style="font-size:16px; padding:14px 20px; width:100%;">
+                <span>Review & Pay USDT</span>
+                <i data-lucide="arrow-right" class="icon-sm"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- =========================================================
+             VIEW 2: MY WALLETS
+             ========================================================= -->
+        <section id="view-wallets" class="view-section" style="display:none;">
+          <!-- Top Summary Card -->
+          <div class="card" style="margin-bottom: 20px; padding: 20px 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+              <div>
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:4px;">
+                  Total USDT Balance
+                </div>
+                <div style="font-size:32px; font-weight:800; color:var(--text-primary);" id="wallets-summary-usdt">
+                  $0.00
+                </div>
+                <div style="font-size:13px; color:var(--text-secondary); margin-top:2px;">
+                  Across <span id="wallets-summary-count">0</span> wallets
+                </div>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary btn-sm" onclick="app.loadWallets()">
+                  <i data-lucide="refresh-cw" class="icon-sm"></i>
+                  <span>Refresh</span>
+                </button>
+                <button class="btn btn-primary" onclick="app.openAddWalletModal()">
+                  <i data-lucide="plus" class="icon-sm"></i>
+                  <span>Add Wallet</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <h2>Your Wallets</h2>
+          </div>
+
+          <!-- Responsive Wallets Cards Grid -->
+          <div id="wallets-list-container" class="wallets-grid">
+            <!-- Dynamically populated with custom-name cards -->
+          </div>
+        </section>
+
+
+        <!-- =========================================================
+             VIEW 3: PAYMENTS HISTORY
+             ========================================================= -->
+        <section id="view-payments" class="view-section" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div>
+              <h1>Payment History</h1>
+              <p class="description" style="margin:0;">All $2.00 USAT payments completed or processed on Celo Mainnet.</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.loadPaymentsHistory()">
+              <i data-lucide="refresh-cw" class="icon-sm"></i>
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          <div class="card" style="padding:0; overflow:hidden;">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Amount</th>
+                    <th>From Wallet</th>
+                    <th>Receiving Destination</th>
+                    <th>Transaction</th>
+                    <th>Gas Subsidized</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody id="payments-table-body">
+                  <tr>
+                    <td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">
+                      Loading payments...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- =========================================================
+             VIEW 4: PROFILE (SIMPLIFIED & CLEAN)
+             ========================================================= -->
+        <section id="view-profile" class="view-section" style="display:none;">
+          <h1>Account Profile</h1>
+          <p class="description">Your registration details and account security.</p>
+
+          <!-- User Details Card -->
+          <div class="card">
+            <h2>User Details</h2>
+            
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+              <div>
+                <div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Full Name</div>
+                <div style="font-size:16px; font-weight:700; color:var(--text-primary); margin-top:2px;" id="prof-display-name">
+                  Loading...
+                </div>
+              </div>
+              <div>
+                <div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Mobile Number</div>
+                <div style="font-size:16px; font-weight:700; color:var(--text-primary); margin-top:2px;" id="prof-display-mobile">
+                  +91 ******
+                </div>
+              </div>
+              <div>
+                <div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Account Created</div>
+                <div style="font-size:14px; font-weight:500; color:var(--text-secondary); margin-top:2px;" id="prof-display-created">
+                  —
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+              <button type="button" class="btn btn-secondary" onclick="app.handleLogout()">
+                <i data-lucide="log-out" class="icon-sm"></i>
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Change Password Card -->
+          <div class="card" style="margin-top: 20px;">
+            <h2>Change Password</h2>
+            <p class="description" style="margin-bottom:16px;">Update your account password. Must be at least 8 characters with letters and numbers.</p>
+
+            <form id="form-change-password" onsubmit="app.handleChangePassword(event)">
+              <div class="form-group">
+                <label class="form-label" for="curr-password">Current Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="curr-password" class="form-input" placeholder="Enter current password" required>
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('curr-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="new-password">New Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="new-password" class="form-input" placeholder="Enter new password" required minlength="8">
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('new-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+                <div class="form-help">Minimum 8 characters with at least one letter and one number.</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="confirm-new-password">Confirm New Password</label>
+                <div class="input-password-wrapper">
+                  <input type="password" id="confirm-new-password" class="form-input" placeholder="Confirm new password" required minlength="8">
+                  <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('confirm-new-password', this)">
+                    <i data-lucide="eye" class="icon-sm"></i>
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary" id="btn-change-pwd">
+                <i data-lucide="check" class="icon-sm"></i>
+                <span>Update Password</span>
+              </button>
+            </form>
+          </div>
+        </section>
+
+
+        <!-- =========================================================
+             VIEW 5: ADMIN DASHBOARD (MULTI-SECTION FINTECH VIEW)
+             ========================================================= -->
+        <section id="view-admin" class="view-section" style="display:none;">
+          <!-- Admin Login Card (Shown only if not authenticated as admin) -->
+          <div id="admin-login-box" class="card" style="max-width:440px; margin:40px auto; padding:28px;">
+            <div style="text-align:center; margin-bottom:20px;">
+              <span class="badge badge-blue" style="font-size:12px; padding:4px 10px;">
+                <i data-lucide="shield" class="icon-sm"></i> Admin Portal
+              </span>
+              <h1 style="margin-top:12px; font-size:22px;">Administrator Access</h1>
+              <p class="description">Enter master administrator password to unlock portal.</p>
+            </div>
+            
+            <form id="form-admin-login" onsubmit="app.handleAdminLogin(event)">
+              <div class="form-group">
+                <label class="form-label">Admin Password</label>
+                <input type="password" id="admin-pwd-input" class="form-input" placeholder="Enter master password" required>
+              </div>
+              <button type="submit" class="btn btn-primary btn-lg">Unlock Admin Portal</button>
+            </form>
+          </div>
+
+          <!-- Admin Main View (Rendered when unlocked) -->
+          <div id="admin-main-box" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+              <div>
+                <h1 style="display:flex; align-items:center; gap:8px; margin:0; font-size:22px;">
+                  <i data-lucide="shield-check" style="color:var(--celo-green-dark);"></i>
+                  <span>Admin Console</span>
+                </h1>
+                <p class="description" style="margin:2px 0 0; font-size:12px;">Manage payments, search transactions, inspect wallets & funding.</p>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary btn-sm" onclick="app.navigateTo('dashboard')">
+                  <i data-lucide="arrow-left" class="icon-sm"></i>
+                  <span>User View</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Compact KPI Summary Bar (Mobile-friendly) -->
+            <div class="admin-kpi-grid">
+              <div class="admin-kpi-item">
+                <div class="admin-kpi-val" id="admin-kpi-volume">$0.00</div>
+                <div class="admin-kpi-label">Total Volume</div>
+              </div>
+              <div class="admin-kpi-item">
+                <div class="admin-kpi-val" id="admin-kpi-payments">0</div>
+                <div class="admin-kpi-label">Payments</div>
+              </div>
+              <div class="admin-kpi-item">
+                <div class="admin-kpi-val" id="admin-kpi-users">0</div>
+                <div class="admin-kpi-label">Users</div>
+              </div>
+              <div class="admin-kpi-item">
+                <div class="admin-kpi-val" id="admin-overview-celo-bal" style="color:var(--celo-green-dark);">0.00 CELO</div>
+                <div class="admin-kpi-label">Gas Reserve</div>
+              </div>
+            </div>
+
+            <!-- Mobile-Friendly Horizontal Admin Navigation Tabs -->
+            <div class="admin-tabs-nav">
+              <button class="admin-tab-btn active" data-admin-tab="payments" onclick="app.switchAdminTab('payments')">
+                <i data-lucide="arrow-left-right" class="icon-sm"></i>
+                <span>Payments & Filter</span>
+              </button>
+              <button class="admin-tab-btn" data-admin-tab="wallets" onclick="app.switchAdminTab('wallets')">
+                <i data-lucide="wallet-cards" class="icon-sm"></i>
+                <span>Wallets</span>
+              </button>
+              <button class="admin-tab-btn" data-admin-tab="receiving" onclick="app.switchAdminTab('receiving')">
+                <i data-lucide="arrow-down-to-dot" class="icon-sm"></i>
+                <span>Receiving Wallets</span>
+              </button>
+              <button class="admin-tab-btn" data-admin-tab="funding" onclick="app.switchAdminTab('funding')">
+                <i data-lucide="fuel" class="icon-sm"></i>
+                <span>CELO Funding</span>
+              </button>
+              <button class="admin-tab-btn" data-admin-tab="settings" onclick="app.switchAdminTab('settings')">
+                <i data-lucide="settings" class="icon-sm"></i>
+                <span>Settings</span>
+              </button>
+            </div>
+
+            <!-- ==========================================
+                 TAB 1: PAYMENTS & SMART SEARCH/FILTER
+                 ========================================== -->
+            <div id="admin-tab-payments" class="admin-tab-content">
+              <!-- Smart Filter & Search Box -->
+              <div class="admin-filter-panel">
+                <!-- Search row -->
+                <div class="form-group" style="margin-bottom:10px;">
+                  <div class="search-box" style="margin-bottom:0;">
+                    <i data-lucide="search" class="icon-sm search-icon"></i>
+                    <input type="text" id="admin-payments-search" class="form-input" placeholder="Search by name (e.g. Poornima), phone, address, or tx..." oninput="app.debounceAdminSearch('payments')">
+                  </div>
+                </div>
+
+                <!-- Date & Time Range Grid -->
+                <div class="filter-row-grid">
+                  <div>
+                    <div class="filter-input-label">Date Filter</div>
+                    <input type="date" id="admin-payments-date" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
+                  </div>
+                  <div>
+                    <div class="filter-input-label">Time From (e.g. 16:00 / 4 PM)</div>
+                    <input type="time" id="admin-payments-time-from" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
+                  </div>
+                  <div>
+                    <div class="filter-input-label">Time To (e.g. 19:00 / 7 PM)</div>
+                    <input type="time" id="admin-payments-time-to" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
+                  </div>
+                </div>
+
+                <!-- Status Pills & Presets Row -->
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px;">
+                  <div class="filter-pills" style="margin-bottom:0;">
+                    <div class="filter-pill active" data-status="" onclick="app.setAdminPaymentStatusFilter('')">All Status</div>
+                    <div class="filter-pill" data-status="SUCCESS" onclick="app.setAdminPaymentStatusFilter('SUCCESS')">Success</div>
+                    <div class="filter-pill" data-status="FAILED" onclick="app.setAdminPaymentStatusFilter('FAILED')">Failed</div>
+                    <div class="filter-pill" data-status="PROCESSING" onclick="app.setAdminPaymentStatusFilter('PROCESSING')">Processing</div>
+                  </div>
+
+                  <div style="display:flex; gap:6px;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="app.setAdminDatePreset('today')">
+                      Today
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetAdminPaymentsFilter()">
+                      <i data-lucide="rotate-ccw" class="icon-sm"></i>
+                      <span>Reset</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Dynamic Highlight Filter Summary Banner -->
+              <div class="filter-summary-hero" id="admin-payments-filter-summary">
+                <div class="filter-summary-text" id="admin-filter-summary-text">
+                  Found <strong>0 Payments</strong> &bull; Total Received: <strong>$0.00 USDT</strong>
+                </div>
+                <div style="font-size:12px; color:#15803d; font-weight:600;" id="admin-filter-window-label">
+                  All Records
+                </div>
+              </div>
+
+              <!-- Payments Cards List (Mobile-Optimized) -->
+              <div class="admin-cards-container" id="admin-payments-card-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 TAB 2: WALLETS (EVERY WALLET & BALANCE)
+                 ========================================== -->
+            <div id="admin-tab-wallets" class="admin-tab-content" style="display:none;">
+              <div class="search-box" style="margin-bottom:12px;">
+                <i data-lucide="search" class="icon-sm search-icon"></i>
+                <input type="text" id="admin-wallets-search" class="form-input" placeholder="Search wallet name, user name, mobile, address..." oninput="app.debounceAdminSearch('wallets')">
+              </div>
+
+              <div class="admin-cards-container" id="admin-wallets-card-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 TAB 3: RECEIVING WALLETS
+                 ========================================== -->
+            <div id="admin-tab-receiving" class="admin-tab-content" style="display:none;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                <div>
+                  <h3 style="margin:0; font-size:16px;">Receiving Destinations</h3>
+                  <div style="font-size:12px; color:var(--text-muted);">Configured payment recipient addresses shown to users.</div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="app.openAddReceivingModal()">
+                  <i data-lucide="plus" class="icon-sm"></i>
+                  <span>Add Destination</span>
+                </button>
+              </div>
+
+              <div class="admin-cards-container" id="admin-receiving-card-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 TAB 4: CELO FUNDING (GAS RESERVE)
+                 ========================================== -->
+            <div id="admin-tab-funding" class="admin-tab-content" style="display:none;">
+              <div class="card-surface" style="padding:16px; margin-bottom:16px;">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:12px;">
+                  <div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Reserve Balance</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--celo-green-dark);" id="admin-funding-balance">0.0000 CELO</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Subsidy Per Payment</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--text-primary);">0.05 CELO</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Subsidies Given</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--text-primary);" id="admin-funding-given">0</div>
+                  </div>
+                </div>
+              </div>
+
+              <h4 style="margin:0 0 10px; font-size:14px;">Recent Gas Funding Subsidies</h4>
+              <div class="admin-cards-container" id="admin-funding-card-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 TAB 5: SETTINGS
+                 ========================================== -->
+            <div id="admin-tab-settings" class="admin-tab-content" style="display:none;">
+              <div class="card">
+                <h3 style="margin-top:0;">System Operations</h3>
+                <p class="description">Emergency pause and global checkout controls.</p>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-top:1px solid var(--border-color); flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <div style="font-weight:700; font-size:15px;">System Pause</div>
+                    <div style="font-size:13px; color:var(--text-secondary);">Temporarily halts all new USDT payment submissions across the portal.</div>
+                  </div>
+                  <button class="btn btn-secondary" id="btn-setting-pause" onclick="app.handleAdminTogglePause()">
+                    Pause Payments
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </main>
+
+      <!-- Mobile Bottom Navigation (Strictly 3 Tabs: Dashboard, Wallets, Payments; Profile accessed via top avatar) -->
+      <nav class="mobile-bottom-nav">
+        <div class="bottom-tab active" data-view="dashboard" onclick="app.navigateTo('dashboard')">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </div>
+        <div class="bottom-tab" data-view="wallets" onclick="app.navigateTo('wallets')">
+          <i data-lucide="wallet-cards"></i>
+          <span>Wallets</span>
+        </div>
+        <div class="bottom-tab" data-view="payments" onclick="app.navigateTo('payments')">
+          <i data-lucide="arrow-left-right"></i>
+          <span>Payments</span>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 1: ADD WALLET (Connect vs Import)
+       ========================================================= -->
+  <div id="modal-add-wallet" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <i data-lucide="plus-circle" class="icon-sm" style="color:var(--celo-green);"></i>
+          <span>Add Celo Wallet</span>
+        </h3>
+        <button class="modal-close" onclick="app.closeModal('modal-add-wallet')">&times;</button>
+      </div>
+
+      <!-- Step 1: Selection between Connect and Import -->
+      <div id="add-wallet-step-choice">
+        <p class="description">Choose how you want to add your Celo wallet.</p>
+
+        <!-- Option A: Connect Wallet -->
+        <div class="card-surface" style="cursor:pointer; transition:all 0.15s ease;" onclick="app.handleConnectInBrowserWallet()">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+            <i data-lucide="wallet" class="icon-lg" style="color:var(--celo-green);"></i>
+            <div>
+              <div style="font-weight:700; font-size:15px; color:var(--text-primary);">Connect Wallet</div>
+              <div style="font-size:12px; color:var(--text-muted);">MetaMask, OKX, Valora, Trust, Injected Web3</div>
+            </div>
+          </div>
+          <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+            Non-custodial. Recovery phrases are never stored by this application. Use Connect Wallet to safely use a wallet protected by a recovery phrase.
+          </p>
+        </div>
+
+        <div style="text-align:center; color:var(--text-muted); margin:12px 0; font-size:12px; font-weight:600;">
+          — OR —
+        </div>
+
+        <!-- Option B: Import Private Key -->
+        <div class="card-surface" style="cursor:pointer; transition:all 0.15s ease;" onclick="app.showImportWalletForm()">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+            <i data-lucide="key-round" class="icon-lg" style="color:var(--accent-blue);"></i>
+            <div>
+              <div style="font-weight:700; font-size:15px; color:var(--text-primary);">Import Private Key</div>
+              <div style="font-size:12px; color:var(--text-muted);">AES-256-GCM Encrypted Private Key</div>
+            </div>
+          </div>
+          <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+            Import a dedicated Celo private key securely. Transactions are automatically signed and submitted by the backend.
+          </p>
+        </div>
+      </div>
+
+      <!-- Step 2: Import Private Key Form -->
+      <div id="add-wallet-step-import" style="display:none;">
+        <p class="description">Paste your 64-character Celo private key.</p>
+
+        <div class="card-surface" style="border-left: 3px solid var(--warning); padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary);">
+          <strong>Notice:</strong> 12 or 24-word recovery phrases are strictly not supported. Enter only a 64-character hex private key.
+        </div>
+
+        <form id="form-import-key" onsubmit="app.submitImportWallet(event)">
+          <div class="form-group">
+            <label class="form-label">Wallet Name</label>
+            <input type="text" id="import-wallet-label" class="form-input" placeholder="e.g. Primary Hot Wallet" required maxlength="40">
+            <div class="form-help">Choose a custom name for this wallet.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Private Key</label>
+            <div class="input-password-wrapper">
+              <input type="password" id="import-private-key" class="form-input" placeholder="e.g. 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" required autocomplete="off">
+              <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('import-private-key', this)">
+                <i data-lucide="eye" class="icon-sm"></i>
+              </button>
+            </div>
+            <div class="form-help">Your key is authenticated and encrypted via AES-256-GCM. Never shared.</div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:20px;">
+            <button type="submit" class="btn btn-primary" id="btn-submit-import" style="flex:1;">
+              Import Wallet
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="app.backToAddWalletChoice()">
+              Back
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 1B: PAYMENT CONFIRMATION & DISCLAIMER
+       ========================================================= -->
+  <div id="modal-payment-confirm" class="modal-overlay">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <i data-lucide="shield-alert" class="icon-sm" style="color:var(--celo-green-dark);"></i>
+          <span>Confirm USDT Transfer</span>
+        </h3>
+        <button class="modal-close" onclick="app.closeModal('modal-payment-confirm')">&times;</button>
+      </div>
+
+      <div style="padding: 10px 0;">
+        <div class="receipt-card" style="margin-bottom:16px;">
+          <div class="receipt-row">
+            <span class="receipt-label">Amount</span>
+            <span class="receipt-val" id="confirm-amount-display" style="font-size:18px; font-weight:800; color:var(--celo-green-dark);">0.00 USDT</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">From Wallet</span>
+            <span class="receipt-val" id="confirm-from-display">—</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Recipient</span>
+            <span class="receipt-val code-address" id="confirm-to-display">—</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Network</span>
+            <span class="receipt-val">Celo Mainnet (42220)</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Gas Fee</span>
+            <span class="receipt-val" style="color:var(--celo-green-dark); font-weight:600;">0.05 CELO Auto-Subsidized</span>
+          </div>
+        </div>
+
+        <!-- Mandatory Disclaimer -->
+        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 14px; font-size: 13px; color: #d97706; line-height: 1.5; display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-triangle" class="icon-sm" style="flex-shrink:0; margin-top:2px;"></i>
+          <div>
+            <strong>Important Notice:</strong><br/>
+            Please check the recipient address and amount carefully. Blockchain transactions are irreversible.
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-top:20px;">
+          <button type="button" class="btn btn-primary" id="btn-confirm-payment-action" onclick="app.confirmAndExecutePayment()" style="flex:1;">
+            <span>Confirm & Send</span>
+            <i data-lucide="arrow-right" class="icon-sm"></i>
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-payment-confirm')">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 2: PAYMENT PROGRESS & CONFIRMATION
+       ========================================================= -->
+  <div id="modal-payment-progress" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="pay-modal-header-title">Payment Status</h3>
+        <button class="modal-close" id="btn-close-pay-modal" onclick="app.closeModal('modal-payment-progress')">&times;</button>
+      </div>
+
+      <!-- Step indicator (Shown during processing) -->
+      <div class="step-indicator" id="pay-step-indicator">
+        <div class="step-item active" id="step-1">
+          <div class="step-dot">1</div>
+          <div>Verify</div>
+        </div>
+        <div class="step-item" id="step-2">
+          <div class="step-dot">2</div>
+          <div>Gas Fund</div>
+        </div>
+        <div class="step-item" id="step-3">
+          <div class="step-dot">3</div>
+          <div>Transfer</div>
+        </div>
+        <div class="step-item" id="step-4">
+          <div class="step-dot">4</div>
+          <div>Complete</div>
+        </div>
+      </div>
+
+      <!-- Live status content -->
+      <div style="text-align:center; padding:10px 4px;">
+        <div id="pay-progress-icon-container" style="margin-bottom:12px;">
+          <i data-lucide="loader-2" class="icon-lg" style="animation: spin 1s linear infinite; color:var(--celo-green);"></i>
+        </div>
+        <h3 id="pay-progress-title" style="margin-bottom:6px; font-size:18px;">Checking Balances...</h3>
+        <p id="pay-progress-desc" style="font-size:13px; color:var(--text-secondary); line-height:1.5;">
+          Checking USDT and CELO gas balance on Celo Mainnet...
+        </p>
+
+        <!-- Transaction Receipt Card (Populated on Success) -->
+        <div id="pay-receipt-card" class="receipt-card" style="display:none; text-align:left;">
+          <div class="receipt-row">
+            <span class="receipt-label">Amount Paid</span>
+            <span class="receipt-val" id="receipt-amount-paid" style="font-size:16px; font-weight:800; color:var(--celo-green-dark);">0.00 USDT</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Status</span>
+            <span class="receipt-val"><span class="badge badge-green">Confirmed on-chain</span></span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">From Wallet</span>
+            <span class="receipt-val" id="receipt-from-name">My Wallet</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Recipient</span>
+            <span class="receipt-val">
+              <span class="code-address" id="receipt-to-addr">0x...</span>
+              <button type="button" class="btn-copy" id="btn-copy-receipt-to" title="Copy Recipient Address">
+                <i data-lucide="copy" class="icon-sm"></i>
+              </button>
+            </span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Transaction Hash</span>
+            <span class="receipt-val">
+              <span class="code-address" id="receipt-tx-hash">0x...</span>
+              <button type="button" class="btn-copy" id="btn-copy-receipt-tx" title="Copy Tx Hash">
+                <i data-lucide="copy" class="icon-sm"></i>
+              </button>
+            </span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Network</span>
+            <span class="receipt-val">Celo Mainnet (Chain 42220)</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Date & Time</span>
+            <span class="receipt-val" id="receipt-timestamp">—</span>
+          </div>
+        </div>
+
+        <div id="pay-tx-link-container" style="display:none; margin-top:16px; flex-direction:column; gap:8px;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-full-hash" style="width:100%; justify-content:center;">
+            <i data-lucide="copy" class="icon-sm"></i>
+            <span>Copy Transaction Hash</span>
+          </button>
+          <a id="pay-tx-link" href="#" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;">
+            <span>View on Celo Explorer</span>
+            <i data-lucide="external-link" class="icon-sm"></i>
+          </a>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <button type="button" class="btn btn-primary btn-lg" id="btn-pay-modal-action" onclick="app.closeModal('modal-payment-progress')" style="display:none;">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 3: ADMIN ADD RECEIVING WALLET
+       ========================================================= -->
+  <div id="modal-add-receiving" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Add Receiving Wallet</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-add-receiving')">&times;</button>
+      </div>
+
+      <form id="form-add-receiving" onsubmit="app.submitAddReceivingWallet(event)">
+        <div class="form-group">
+          <label class="form-label">Wallet Label</label>
+          <input type="text" id="recv-label" class="form-input" placeholder="e.g. Treasury Wallet 1" required maxlength="50">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Celo Receiving Address (0x...)</label>
+          <input type="text" id="recv-address" class="form-input" placeholder="0x..." required pattern="^0x[a-fA-F0-9]{40}$">
+          <div class="form-help">Must be a valid 42-character Celo/EVM address.</div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:20px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">
+            Add Destination
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-add-receiving')">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 4: ADMIN USER DETAILS
+       ========================================================= -->
+  <div id="modal-admin-user-details" class="modal-overlay">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <i data-lucide="user" class="icon-sm"></i>
+          <span id="admin-modal-username">User Details</span>
+        </h3>
+        <button class="modal-close" onclick="app.closeModal('modal-admin-user-details')">&times;</button>
+      </div>
+
+      <div id="admin-user-details-content">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================
+       MODAL 5: RENAME WALLET
+       ========================================================= -->
+  <div id="modal-rename-wallet" class="modal-overlay">
+    <div class="modal-card" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Rename Wallet</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-rename-wallet')">&times;</button>
+      </div>
+      <form id="form-rename-wallet" onsubmit="app.submitRenameWallet(event)">
+        <input type="hidden" id="rename-wallet-id" value="">
+        <div class="form-group">
+          <label class="form-label">New Wallet Name</label>
+          <input type="text" id="rename-wallet-name" class="form-input" required minlength="2" maxlength="40">
+        </div>
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">Save Name</button>
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-rename-wallet')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Scripts -->
+  <script src="/js/config.js"></script>
+  <script src="/js/web3.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

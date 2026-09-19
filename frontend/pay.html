@@ -1,0 +1,288 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Approve $2.00 USAT Payment</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --text-main: #f0f6fc;
+            --text-muted: #8b949e;
+            --celo-green: #35d07f;
+            --celo-dark-green: #28a745;
+            --accent: #58a6ff;
+            --danger: #f85149;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .logo {
+            font-size: 44px;
+            margin-bottom: 12px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        .info-box {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            text-align: left;
+            font-size: 13px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+        .info-label {
+            color: var(--text-muted);
+        }
+        .info-val {
+            font-weight: 600;
+        }
+        .btn {
+            background: linear-gradient(135deg, var(--celo-green), var(--celo-dark-green));
+            color: #000;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            border: none;
+            width: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active {
+            transform: scale(0.98);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status-msg {
+            margin-top: 16px;
+            font-size: 13px;
+            min-height: 20px;
+            word-break: break-word;
+        }
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--celo-green);
+            margin-top: 18px;
+            background: rgba(53, 208, 127, 0.1);
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">💵</div>
+        <h1>Approve $2.00 USAT</h1>
+        <p class="subtitle">Please confirm the $2.00 USAT payment in your connected wallet.</p>
+        
+        <div class="info-box">
+            <div class="info-row">
+                <span class="info-label">Amount:</span>
+                <span class="info-val" style="color:var(--celo-green)">$2.00 USAT</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">From:</span>
+                <span class="info-val" id="displayFrom">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label" id="displayRecipientLabel">To:</span>
+                <span class="info-val" id="displayTo">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Network:</span>
+                <span class="info-val">Celo Mainnet</span>
+            </div>
+        </div>
+
+        <button id="signBtn" class="btn" onclick="signAndSend()">💳 Approve & Pay in Wallet</button>
+        <div id="status" class="status-msg"></div>
+
+        <div class="security-badge">
+            🔐 Signed directly by your wallet
+        </div>
+    </div>
+
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentId = urlParams.get('payment_id') || '';
+        const fromAddr = urlParams.get('from') || '';
+        const toAddr = urlParams.get('to') || '';
+        const recName = urlParams.get('rec_name') || 'Receiving Wallet';
+
+        function trunc(addr) {
+            if (!addr || addr.length < 10) return addr || '--';
+            return addr.slice(0, 6) + '...' + addr.slice(-4);
+        }
+
+        document.getElementById('displayFrom').textContent = trunc(fromAddr);
+        document.getElementById('displayTo').textContent = trunc(toAddr);
+        document.getElementById('displayRecipientLabel').textContent = 'To (' + recName + '):';
+
+        const announcedProviders = [];
+        window.addEventListener('eip6963:announceProvider', (event) => {
+            if (event.detail && !announcedProviders.some(p => p.info?.uuid === event.detail.info?.uuid)) {
+                announcedProviders.push(event.detail);
+            }
+        });
+        try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (e) {}
+
+        function getProvider() {
+            if (announcedProviders.length > 0) {
+                const okx = announcedProviders.find(p => p.info?.name?.toLowerCase().includes('okx'));
+                if (okx) return okx.provider;
+                const mm = announcedProviders.find(p => p.info?.name?.toLowerCase().includes('metamask'));
+                if (mm) return mm.provider;
+                return announcedProviders[0].provider;
+            }
+            if (window.okxwallet && typeof window.okxwallet.request === 'function') {
+                return window.okxwallet;
+            }
+            if (window.ethereum?.providers && Array.isArray(window.ethereum.providers) && window.ethereum.providers.length > 0) {
+                const okx = window.ethereum.providers.find(p => p.isOKExWallet || p.isOkxWallet);
+                if (okx) return okx;
+                const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+                if (mm) return mm;
+                return window.ethereum.providers[0];
+            }
+            if (window.ethereum && typeof window.ethereum.request === 'function') {
+                return window.ethereum;
+            }
+            return null;
+        }
+
+        const USAT_CONTRACT_ADDRESS = '0xd2ab3c9a02dbbab236bfec45d1d755df4267f771';
+        function buildTransferCalldata(recipientAddress) {
+            const cleanAddr = recipientAddress.toLowerCase().replace(/^0x/, '');
+            const paddedAddr = cleanAddr.padStart(64, '0');
+            const amountHex = '00000000000000000000000000000000000000000000000000000000001e8480';
+            return '0xa9059cbb' + paddedAddr + amountHex;
+        }
+
+        async function signAndSend() {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('signBtn');
+            const provider = getProvider();
+
+            if (!provider) {
+                status.innerHTML = '<span style="color:var(--danger)">No Web3 wallet found. Please disable conflicting wallet extensions or open in OKX/MetaMask.</span>';
+                return;
+            }
+
+            try {
+                btn.disabled = true;
+                status.innerText = 'Switching to Celo Mainnet...';
+
+                try {
+                    await provider.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: '0xa4ec' }]
+                    });
+                } catch (switchErr) {
+                    if (switchErr.code === 4902 || switchErr.message?.includes('Unrecognized chain')) {
+                        await provider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: '0xa4ec',
+                                chainName: 'Celo Mainnet',
+                                nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                                rpcUrls: ['https://forno.celo.org'],
+                                blockExplorerUrls: ['https://celoscan.io']
+                            }]
+                        });
+                    }
+                }
+
+                status.innerText = 'Please confirm the transaction in your wallet prompt...';
+
+                const calldata = buildTransferCalldata(toAddr);
+                const txParams = {
+                    from: fromAddr,
+                    to: USAT_CONTRACT_ADDRESS,
+                    data: calldata,
+                    value: '0x0',
+                    chainId: '0xa4ec'
+                };
+
+                const txHash = await provider.request({
+                    method: 'eth_sendTransaction',
+                    params: [txParams]
+                });
+
+                status.innerHTML = '<span style="color:var(--celo-green)">✅ Broadcasted! Tx: ' + txHash.slice(0, 10) + '...</span>';
+
+                const payload = JSON.stringify({
+                    action: 'payment_submitted',
+                    payment_id: paymentId,
+                    tx_hash: txHash
+                });
+
+                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+                    window.Telegram.WebApp.sendData(payload);
+                    setTimeout(() => window.Telegram.WebApp.close(), 1500);
+                } else {
+                    status.innerHTML = '<span style="color:var(--celo-green)">✅ Tx Submitted: <a href="https://celoscan.io/tx/' + txHash + '" target="_blank" style="color:var(--accent)">' + txHash.slice(0, 10) + '...</a><br>Return to Telegram bot to see confirmation.</span>';
+                }
+
+            } catch (err) {
+                btn.disabled = false;
+                status.innerHTML = '<span style="color:var(--danger)">' + (err.message || err) + '</span>';
+            }
+        }
+    </script>
+</body>
+</html>

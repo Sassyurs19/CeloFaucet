@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: celo-faucet-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: CELO_RPC_URL
+        value: https://forno.celo.org
+      - key: USAT_TOKEN_ADDRESS
+        value: 0xd2ab3c9a02dbbab236bfec45d1d755df4267f771
+      - key: MIN_USER_CELO_THRESHOLD
+        value: 0.005
+      - key: GAS_SUBSIDY_CELO_AMOUNT
+        value: 0.05
+      - key: FRONTEND_URL
+        sync: false
+      - key: WEBAPP_SECRET_KEY
+        generateValue: true
+      - key: WALLET_ENCRYPTION_KEY
+        generateValue: true
+      - key: DEDICATED_CELO_WALLET_KEY
+        sync: false
+      - key: DEDICATED_CELO_WALLET_ADDRESS
+        sync: false
