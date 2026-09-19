@@ -261,15 +261,25 @@
               </select>
 
               <!-- Selected Wallet Detail -->
-              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(53, 208, 127, 0.08); border:1px solid rgba(53, 208, 127, 0.25); border-radius:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(53, 208, 127, 0.08); border:1px solid rgba(53, 208, 127, 0.25); border-radius:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                   <span class="badge badge-green" style="font-size:11px; text-transform:none;">Selected</span>
                   <strong id="dash-selected-wallet-name" style="font-size:14px; color:var(--text-primary);">Wallet</strong>
                   <span id="dash-selected-wallet-address" style="font-family:monospace; font-size:12px; color:var(--text-muted);">(0x...)</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="color:var(--text-muted); font-size:12px;">Available:</span>
-                  <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); font-size:14px; font-weight:700;">0.00 USDT</strong>
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:var(--text-muted); font-size:12px;">USDT:</span>
+                    <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); font-size:14px; font-weight:700;">0.00 USDT</strong>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:var(--text-muted); font-size:12px;">Gas:</span>
+                    <strong id="dash-selected-wallet-celo" style="color:var(--text-primary); font-size:13px; font-weight:600;">0.00 CELO</strong>
+                    <button type="button" id="btn-dash-fill-celo" class="btn btn-outline-sm" onclick="app.fillCeloFeeForSelected()" style="font-size:11px; padding:2px 8px; border-radius:6px; color:var(--celo-green-dark); border:1px solid var(--celo-green); background:rgba(53,208,127,0.08); font-weight:700; cursor:pointer; display:none; align-items:center; gap:4px;" title="Fill 0.05 CELO gas fee from faucet wallet">
+                      <i data-lucide="fuel" class="icon-xs"></i>
+                      <span>+ Fill Fee</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

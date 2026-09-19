@@ -6,18 +6,6 @@
  */
 
 const app = (function () {
-  // Global Fresh Start Version: Cleans up all previous stale device caches, vaults, and ghost accounts
-  const FRESH_START_EPOCH = 'v2_fresh_clean_2026';
-  try {
-    if (localStorage.getItem('celo_app_epoch') !== FRESH_START_EPOCH) {
-      console.log('Starting fresh dashboard: clearing all local caches...');
-      localStorage.clear();
-      localStorage.setItem('celo_app_epoch', FRESH_START_EPOCH);
-    }
-  } catch (e) {
-    console.warn('Could not verify/reset localStorage epoch:', e);
-  }
-
   const STORAGE_KEY_TOKEN = 'usat_session_token';
   const STORAGE_KEY_ADMIN = 'usat_admin_token';
   const CELO_EXPLORER_BASE = 'https://celoscan.io/tx/';
@@ -144,8 +132,16 @@ const app = (function () {
   }
 
   function handleStandaloneFallback(endpoint, options = {}) {
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '0.0.0.0'
+    );
     const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    const baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
+    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || (!isLocal ? storedBaseUrl : '') || '').replace(/\/$/, '');
+    if (isLocal && (baseUrl.includes('onrender.com') || baseUrl.includes('web.app'))) {
+      baseUrl = '';
+    }
     if (baseUrl) {
       throw new Error(`Production request failed for ${endpoint}`);
     }
@@ -423,8 +419,16 @@ const app = (function () {
       headers['X-Admin-Token'] = state.adminToken;
     }
 
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '0.0.0.0'
+    );
     const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    const baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
+    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || (!isLocal ? storedBaseUrl : '') || '').replace(/\/$/, '');
+    if (isLocal && (baseUrl.includes('onrender.com') || baseUrl.includes('web.app'))) {
+      baseUrl = '';
+    }
     const url = (baseUrl && endpoint.startsWith('/')) ? `${baseUrl}${endpoint}` : endpoint;
     
     let resp = null;
@@ -1016,6 +1020,7 @@ const app = (function () {
     const selectedNameEl = document.getElementById('dash-selected-wallet-name');
     const selectedAddrEl = document.getElementById('dash-selected-wallet-address');
     const selectedBalEl = document.getElementById('dash-selected-wallet-balance');
+    const selectedCeloEl = document.getElementById('dash-selected-wallet-celo');
     const amountHintEl = document.getElementById('amount-validation-hint');
 
     const walletId = parseInt(select?.value, 10);
@@ -1033,12 +1038,20 @@ const app = (function () {
 
     const name = wallet.name || wallet.label || 'My Wallet';
     const usat = parseFloat(wallet.usat_balance || 0);
+    const celo = parseFloat(wallet.celo_balance || 0);
     const shortAddr = formatShortAddress(wallet.address);
 
     if (selectedNameEl) selectedNameEl.textContent = name;
     if (selectedAddrEl) selectedAddrEl.textContent = `(${shortAddr})`;
     if (selectedBalEl) selectedBalEl.textContent = `${usat.toFixed(2)} USDT`;
+    if (selectedCeloEl) selectedCeloEl.textContent = `${celo.toFixed(4)} CELO`;
     if (amountHintEl) amountHintEl.textContent = `Available Balance: ${usat.toFixed(2)} USDT in ${name}`;
+
+    const fillFeeBtn = document.getElementById('btn-dash-fill-celo');
+    if (fillFeeBtn) {
+      fillFeeBtn.style.display = celo <= 0 ? 'inline-flex' : 'none';
+    }
+    renderIcons();
   }
 
   function setMaxAmount() {
@@ -1446,7 +1459,9 @@ const app = (function () {
       const typeLabel = isConnected ? 'Connected Wallet' : 'Imported Wallet';
       const walletName = escapeHtml(w.name || w.label || 'My Wallet');
       const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
-      const celo = parseFloat(w.celo_balance || 0).toFixed(4);
+      const celoNum = parseFloat(w.celo_balance || 0);
+      const celo = celoNum.toFixed(4);
+      const needsCeloFee = celoNum <= 0;
 
       html += `
         <div class="wallet-card">
@@ -1476,6 +1491,12 @@ const app = (function () {
                   <i data-lucide="pencil" class="icon-sm"></i>
                   <span>Rename</span>
                 </button>
+                ${needsCeloFee ? `
+                <button type="button" class="dropdown-item" onclick="app.fillCeloFee(${w.id}, event)" style="color:var(--celo-green-dark); font-weight:600;">
+                  <i data-lucide="fuel" class="icon-sm" style="color:var(--celo-green);"></i>
+                  <span>Fill CELO Fee (+0.05 CELO)</span>
+                </button>
+                ` : ''}
                 <button type="button" class="dropdown-item" onclick="app.refreshSingleWallet(${w.id})">
                   <i data-lucide="refresh-cw" class="icon-sm"></i>
                   <span>Refresh Balance</span>
@@ -1491,7 +1512,15 @@ const app = (function () {
           <div class="wallet-balance-row">
             <div class="wallet-balance-label">USDT Balance</div>
             <div class="wallet-usdt-amount">$${usdt}</div>
-            <div class="wallet-celo-amount">${celo} CELO Gas</div>
+            <div class="wallet-celo-amount" style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+              <span>${celo} CELO Gas</span>
+              ${needsCeloFee ? `
+              <button type="button" class="btn btn-outline-sm" onclick="app.fillCeloFee(${w.id}, event)" style="font-size:11px; padding:3px 9px; border-radius:6px; color:var(--celo-green-dark); border:1px solid var(--celo-green); background:rgba(53,208,127,0.08); font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="Fill 0.05 CELO gas fee from faucet wallet">
+                <i data-lucide="fuel" class="icon-xs"></i>
+                <span>Fill Fee</span>
+              </button>
+              ` : ''}
+            </div>
           </div>
 
           <div>
@@ -1540,6 +1569,45 @@ const app = (function () {
   function refreshSingleWallet(walletId) {
     loadWallets();
     showToast('Refreshing wallet balance...', 'info');
+  }
+
+  async function fillCeloFee(walletId, event) {
+    if (event && event.stopPropagation) event.stopPropagation();
+    document.querySelectorAll('.dropdown').forEach((d) => d.classList.remove('open'));
+
+    const wallet = state.wallets.find((w) => w.id === walletId);
+    const walletName = wallet?.name || wallet?.label || wallet?.wallet_name || 'this wallet';
+
+    const celoBal = parseFloat(wallet?.celo_balance || 0);
+    if (celoBal > 0) {
+      showToast(`Wallet already has ${celoBal.toFixed(4)} CELO gas fee. Faucet fee refill is only available for wallets with 0 CELO.`, 'warning');
+      return;
+    }
+
+    if (!confirm(`Fill CELO gas fee (+0.05 CELO) for "${walletName}"?\n\nThis broadcasts a real CELO transaction from the dedicated faucet wallet to cover your blockchain gas fees.`)) {
+      return;
+    }
+
+    try {
+      showToast(`Broadcasting 0.05 CELO gas fee to ${walletName}...`, 'info');
+      const data = await apiRequest(`/api/wallets/${walletId}/fill-celo`, { method: 'POST' });
+
+      showToast(`Successfully filled ${data.amount_formatted || '0.05 CELO'} for ${walletName}!`, 'success');
+      if (data.tx_hash) {
+        showToast(`Tx Confirmed: ${data.tx_hash.slice(0, 10)}...`, 'info');
+      }
+      await loadWallets();
+    } catch (err) {
+      showToast(`Fill CELO fee error: ${err.message}`, 'error');
+    }
+  }
+
+  async function fillCeloFeeForSelected() {
+    if (!state.selectedWalletId) {
+      showToast('Please select a sending wallet first from the dropdown.', 'warning');
+      return;
+    }
+    await fillCeloFee(state.selectedWalletId);
   }
 
   function openRenameWalletModal(walletId, currentName) {
@@ -2467,6 +2535,8 @@ const app = (function () {
     toggleWalletDropdown,
     useWalletForPayment,
     refreshSingleWallet,
+    fillCeloFee,
+    fillCeloFeeForSelected,
     openRenameWalletModal,
     submitRenameWallet,
     loadWallets,

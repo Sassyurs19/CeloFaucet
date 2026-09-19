@@ -788,6 +788,90 @@ async def api_delete_wallet(request: web.Request) -> web.Response:
     return web.json_response({"success": True})
 
 
+async def api_fill_wallet_celo(request: web.Request) -> web.Response:
+    """
+    Fund user's wallet with CELO gas fee from the dedicated faucet wallet.
+    Uses the configured faucet wallet (0x84D118A43b60bd73D113c0ef08F238BE866E3A2b).
+    """
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        wallet_id = int(request.match_info["id"])
+    except (ValueError, KeyError):
+        return web.json_response({"error": "Invalid wallet ID"}, status=400)
+
+    wallet = await db.get_user_wallet_by_id(wallet_id, user_id)
+    if not wallet:
+        return web.json_response({"error": "Wallet not found or does not belong to your account."}, status=404)
+
+    target_addr = Web3.to_checksum_address(wallet["address"])
+
+    if not wallet_manager.is_configured:
+        return web.json_response({"error": "CELO faucet funding wallet is not configured on server."}, status=503)
+
+    funding_amt = float(config.celo_funding_amount or 0.05)
+
+    faucet_bal = await celo_client.get_celo_balance(wallet_manager.address)
+    if faucet_bal < (funding_amt + config.min_gas_reserve):
+        return web.json_response({
+            "error": f"Faucet reserve ({faucet_bal:.4f} CELO) is currently low. Please contact admin."
+        }, status=503)
+
+    current_user_celo = await celo_client.get_celo_balance(target_addr)
+    if round(current_user_celo, 4) > 0:
+        return web.json_response({
+            "error": f"Wallet already has {current_user_celo:.4f} CELO gas fee. Faucet funding is only available for wallets with 0 CELO."
+        }, status=400)
+
+    success, tx_hash, err_msg = await celo_client.send_celo_funding(
+        to_address=target_addr,
+        amount_celo=funding_amt,
+    )
+
+    if not success:
+        logger.error("Failed to fund CELO to %s: %s", target_addr, err_msg)
+        return web.json_response({"error": f"Failed to transfer CELO gas fee: {err_msg}"}, status=500)
+
+    # Record in claims table for audit & analytics
+    req_id = f"fill_gas_{uuid.uuid4().hex[:12]}"
+    try:
+        await db.create_claim(
+            request_id=req_id,
+            telegram_id=user_id,
+            destination_address=target_addr,
+            amount=funding_amt,
+        )
+        await db.update_claim_status(
+            request_id=req_id,
+            status="SUCCESS",
+            tx_hash=tx_hash,
+        )
+    except Exception as e:
+        logger.warning("Could not record claim in database: %s", e)
+
+    new_user_celo = await celo_client.get_celo_balance(target_addr)
+
+    return web.json_response({
+        "success": True,
+        "tx_hash": tx_hash,
+        "amount": funding_amt,
+        "amount_formatted": f"{funding_amt:.2f} CELO",
+        "previous_balance": f"{current_user_celo:.4f}",
+        "new_balance": f"{new_user_celo:.4f}",
+        "explorer_url": f"https://celoscan.io/tx/{tx_hash}",
+        "faucet_address": wallet_manager.address,
+        "wallet": {
+            "id": wallet["id"],
+            "name": wallet["wallet_name"],
+            "address": target_addr,
+            "celo_balance": f"{new_user_celo:.4f}",
+        },
+        "message": f"Successfully sent {funding_amt:.2f} CELO fee to {wallet['wallet_name']}!",
+    })
+
+
 # =========================================================================
 # 3. PAYMENT FLOW & USAT TRANSFER API
 # =========================================================================
@@ -1605,6 +1689,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/wallets/import", api_import_wallet)
     app.router.add_patch("/api/wallets/{id}", api_rename_wallet)
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
+    app.router.add_post("/api/wallets/{id}/fill-celo", api_fill_wallet_celo)
 
     # Payments
     app.router.add_get("/api/receiving-wallets", api_get_receiving_wallets)
