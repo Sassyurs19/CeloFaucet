@@ -626,6 +626,9 @@ const app = (function () {
       state.sessionToken = data.token;
       state.user = data.user;
       localStorage.setItem(STORAGE_KEY_TOKEN, data.token);
+      try {
+        localStorage.setItem('celo_saved_account', JSON.stringify({ name, mobile }));
+      } catch (e) {}
 
       const displayName = state.user?.full_name || state.user?.name || 'User';
       showToast(`Welcome, ${displayName}!`, 'success');
@@ -666,10 +669,39 @@ const app = (function () {
       btn.innerHTML = '<i data-lucide="loader-2" class="icon-sm" style="animation:spin 1s linear infinite;"></i> Logging in...';
       renderIcons();
 
-      const data = await apiRequest('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ mobile, password }),
-      });
+      let data;
+      try {
+        data = await apiRequest('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ mobile, password }),
+        });
+      } catch (loginErr) {
+        // Auto-heal: If server was redeployed and database is fresh, check if this device was previously registered
+        const savedAccRaw = localStorage.getItem('celo_saved_account');
+        if (savedAccRaw) {
+          try {
+            const savedAcc = JSON.parse(savedAccRaw);
+            if (savedAcc.mobile === mobile) {
+              console.log('Account re-syncing on newly booted server instance...');
+              const autoReg = await apiRequest('/api/auth/register', {
+                method: 'POST',
+                body: JSON.stringify({
+                  name: savedAcc.name || 'User',
+                  mobile,
+                  password,
+                  confirm_password: password,
+                }),
+              });
+              if (autoReg && autoReg.token && autoReg.user) {
+                data = autoReg;
+              }
+            }
+          } catch (regErr) {
+            console.warn('Auto-sync register fallback skipped:', regErr);
+          }
+        }
+        if (!data) throw loginErr;
+      }
 
       if (!data || !data.user) {
         throw new Error(data?.error || data?.message || 'Login failed: unexpected server response. Please verify backend API.');
@@ -678,6 +710,12 @@ const app = (function () {
       state.sessionToken = data.token;
       state.user = data.user;
       localStorage.setItem(STORAGE_KEY_TOKEN, data.token);
+      try {
+        localStorage.setItem('celo_saved_account', JSON.stringify({
+          name: state.user?.full_name || state.user?.name || 'User',
+          mobile: mobile,
+        }));
+      } catch (e) {}
 
       const displayName = state.user?.full_name || state.user?.name || 'User';
       showToast(`Welcome back, ${displayName}!`, 'success');
@@ -820,10 +858,85 @@ const app = (function () {
     }
   }
 
+  // --- Device Safety Vault: Guarantees user accounts and wallets survive server redeploys ---
+  function getDeviceVaultKey() {
+    const rawMobile = state.user?.mobile_raw || state.user?.mobile || '';
+    const digits = rawMobile.replace(/\D/g, '');
+    return 'celo_vault_wallets_' + (digits || 'current');
+  }
+
+  function saveWalletsToDeviceVault(wallets) {
+    if (!Array.isArray(wallets)) return;
+    try {
+      const key = getDeviceVaultKey();
+      const simplified = wallets.map(w => ({
+        address: w.address,
+        name: w.wallet_name || w.name || w.label || 'Saved Wallet',
+        wallet_type: w.wallet_type || 'connected',
+      })).filter(w => Boolean(w.address));
+      localStorage.setItem(key, JSON.stringify(simplified));
+    } catch (e) {
+      console.warn('Device vault save error:', e);
+    }
+  }
+
+  function getWalletsFromDeviceVault() {
+    try {
+      const key = getDeviceVaultKey();
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function removeWalletFromDeviceVault(address) {
+    if (!address) return;
+    try {
+      const key = getDeviceVaultKey();
+      const current = getWalletsFromDeviceVault();
+      const filtered = current.filter(w => w.address?.toLowerCase() !== address.toLowerCase());
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (e) {
+      console.warn('Device vault remove error:', e);
+    }
+  }
+
   async function loadWallets() {
     try {
       const data = await apiRequest('/api/wallets');
-      state.wallets = data.wallets || [];
+      let wallets = data.wallets || [];
+
+      // Auto-Recovery from Device Vault if backend was redeployed / cold-started with fresh database
+      if (wallets.length === 0) {
+        const cachedWallets = getWalletsFromDeviceVault();
+        if (cachedWallets.length > 0) {
+          console.log(`Auto-restoring ${cachedWallets.length} wallet(s) from device vault...`);
+          for (const cw of cachedWallets) {
+            try {
+              await apiRequest('/api/wallets/connect', {
+                method: 'POST',
+                body: JSON.stringify({
+                  address: cw.address,
+                  name: cw.name || 'Restored Wallet',
+                }),
+              });
+            } catch (e) {
+              console.warn('Vault auto-sync error for wallet:', cw.address, e);
+            }
+          }
+          const refreshed = await apiRequest('/api/wallets');
+          wallets = refreshed.wallets || [];
+          if (wallets.length > 0) {
+            showToast(`Permanently restored ${wallets.length} wallet(s) from your device vault.`, 'success');
+          }
+        }
+      }
+
+      state.wallets = wallets;
+      if (wallets.length > 0) {
+        saveWalletsToDeviceVault(wallets);
+      }
 
       // Calculate dynamic live total USDT balance across all user wallets
       const totalUsdt = state.wallets.reduce((sum, w) => sum + parseFloat(w.usat_balance || 0), 0);
@@ -1543,8 +1656,12 @@ const app = (function () {
   async function handleDeleteWallet(walletId) {
     if (!confirm('Are you sure you want to remove this wallet?')) return;
 
+    const toDelete = state.wallets.find((w) => w.id === walletId);
     try {
       await apiRequest(`/api/wallets/${walletId}`, { method: 'DELETE' });
+      if (toDelete && toDelete.address) {
+        removeWalletFromDeviceVault(toDelete.address);
+      }
       showToast('Wallet removed.', 'success');
       await loadWallets();
     } catch (err) {

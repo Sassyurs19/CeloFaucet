@@ -8,6 +8,10 @@ automatic 0.05 CELO gas funding, rate limiting, and admin controls.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import re
 import secrets
@@ -31,8 +35,8 @@ logger = logging.getLogger(__name__)
 # Argon2id password hasher
 password_hasher = PasswordHasher()
 
-# In-memory session store & rate-limiting trackers
-# session_id -> { "user_id": int, "is_admin": bool, "created_at": float }
+# In-memory session store cache & rate-limiting trackers
+# session_id -> { "user_id": int, "is_admin": bool, "mobile": str, "created_at": float }
 USER_SESSIONS: dict[str, dict] = {}
 # admin_session_id -> { "is_admin": bool, "created_at": float }
 ADMIN_SESSIONS: set[str] = set()
@@ -57,22 +61,91 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     return True, ""
 
 
+# --- Cryptographically Signed, Persistent Session Tokens ---
+
+def create_session_token(user_id: int, mobile: str, is_admin: bool, exp_days: int = 30) -> str:
+    """
+    Generate cryptographically signed, stateless session token.
+    Survives container redeployments, restarts, and sleep cycles without forcing user logouts.
+    """
+    secret = (config.wallet_encryption_key or "celo_permanent_session_secret_2026").encode("utf-8")
+    payload = {
+        "uid": int(user_id),
+        "mob": str(mobile or ""),
+        "adm": bool(is_admin),
+        "iat": int(time.time()),
+        "exp": int(time.time()) + (exp_days * 86400),
+    }
+    payload_json = json.dumps(payload, separators=(',', ':')).encode("utf-8")
+    b64_payload = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
+    sig = hmac.new(secret, b64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    token = f"{b64_payload}.{sig}"
+    
+    # Also keep in in-memory session cache for fast lookup
+    USER_SESSIONS[token] = {
+        "user_id": user_id,
+        "is_admin": is_admin,
+        "mobile": mobile,
+        "created_at": time.time(),
+    }
+    return token
+
+
+def verify_session_token(token: str) -> dict | None:
+    """
+    Verify cryptographically signed token. Returns verified payload dict or None.
+    """
+    if not token or "." not in token:
+        return None
+    try:
+        parts = token.split(".", 1)
+        b64_payload, sig = parts[0], parts[1]
+        secret = (config.wallet_encryption_key or "celo_permanent_session_secret_2026").encode("utf-8")
+        expected_sig = hmac.new(secret, b64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        padded = b64_payload + "=" * ((4 - len(b64_payload) % 4) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8"))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None
+
+
 # --- Helper Functions & Middlewares ---
 
 def get_user_id_from_request(request: web.Request) -> int | None:
-    """Extract authenticated user ID from Authorization header or cookie."""
-    # 1. Bearer token
+    """Extract authenticated user ID from Authorization header, X-Session-Id, or cookie."""
+    token = None
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
-        sess = USER_SESSIONS.get(token)
-        if sess:
-            return sess.get("user_id")
-    
-    # 2. X-Session-Id header or cookie
-    sess_id = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
-    if sess_id and sess_id in USER_SESSIONS:
-        return USER_SESSIONS[sess_id].get("user_id")
+    if not token:
+        token = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
+
+    if not token:
+        return None
+
+    # 1. Check in-memory cache
+    sess = USER_SESSIONS.get(token)
+    if sess:
+        return sess.get("user_id")
+
+    # 2. Check signed token (survives restarts/redeploys)
+    payload = verify_session_token(token)
+    if payload:
+        uid = payload.get("uid")
+        is_adm = bool(payload.get("adm"))
+        mob = payload.get("mob", "")
+        # Restore into in-memory session cache
+        USER_SESSIONS[token] = {
+            "user_id": uid,
+            "is_admin": is_adm,
+            "mobile": mob,
+            "created_at": payload.get("iat", time.time()),
+        }
+        return uid
 
     return None
 
@@ -90,8 +163,22 @@ def is_admin_request(request: web.Request) -> bool:
     if not token:
         token = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
 
-    if token and token in USER_SESSIONS:
+    if not token:
+        return False
+
+    if token in USER_SESSIONS:
         return bool(USER_SESSIONS[token].get("is_admin"))
+
+    payload = verify_session_token(token)
+    if payload:
+        is_adm = bool(payload.get("adm"))
+        USER_SESSIONS[token] = {
+            "user_id": payload.get("uid"),
+            "is_admin": is_adm,
+            "mobile": payload.get("mob", ""),
+            "created_at": payload.get("iat", time.time()),
+        }
+        return is_adm
 
     return False
 
@@ -189,13 +276,8 @@ async def api_register(request: web.Request) -> web.Response:
     # Check admin eligibility (strictly mobile 8142177207)
     is_admin = is_admin_phone(normalized_mobile)
 
-    # Create session token
-    session_token = secrets.token_urlsafe(32)
-    USER_SESSIONS[session_token] = {
-        "user_id": user_id,
-        "is_admin": is_admin,
-        "created_at": time.time(),
-    }
+    # Create cryptographically signed persistent session token
+    session_token = create_session_token(user_id, normalized_mobile, is_admin)
 
     resp = web.json_response({
         "success": True,
@@ -300,12 +382,8 @@ async def api_login(request: web.Request) -> web.Response:
     user_id = user["id"]
     is_admin = is_admin_phone(user.get("normalized_mobile") or user.get("mobile_number"))
 
-    session_token = secrets.token_urlsafe(32)
-    USER_SESSIONS[session_token] = {
-        "user_id": user_id,
-        "is_admin": is_admin,
-        "created_at": time.time(),
-    }
+    # Create cryptographically signed persistent session token
+    session_token = create_session_token(user_id, normalized_mobile, is_admin)
 
     full_name = user.get("full_name") or user.get("first_name") or "User"
     resp = web.json_response({
@@ -403,6 +481,27 @@ async def api_get_me(request: web.Request) -> web.Response:
     profile = await db.get_user_profile(user_id)
     if not profile:
         profile = await db.get_user_by_id(user_id)
+
+    # Auto-heal user record if container restart or redeploy recreated ephemeral database
+    if not profile:
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else (
+            request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
+        )
+        payload = verify_session_token(token) if token else None
+        if payload and payload.get("mob"):
+            mob = payload["mob"]
+            norm_mob = normalize_mobile(mob)
+            profile = await db.get_user_by_normalized_mobile(norm_mob)
+            if not profile:
+                profile = await db.create_user_account(
+                    full_name="User",
+                    mobile_number=mob,
+                    password_hash="",
+                )
+                user_id = profile.get("id", user_id)
+                logger.info("Auto-healed user profile for %s into newly initialized database.", mob)
+
     if not profile:
         return web.json_response({
             "authenticated": False,

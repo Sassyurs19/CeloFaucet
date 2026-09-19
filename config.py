@@ -61,6 +61,7 @@ class Config:
     # Block Explorer & Storage
     explorer_tx_url: str = "https://celoscan.io/tx/"
     database_path: str = "data/faucet.db"
+    database_url: str = ""
     
     # Safety mode
     dry_run: bool = False
@@ -115,16 +116,37 @@ class Config:
         except ValueError:
             min_gas = 0.02
 
-        # Encryption Key: Ensure 32-byte key exists
+        # Encryption Key: Ensure stable 32-byte key exists across all container restarts
         enc_key = os.getenv("WALLET_ENCRYPTION_KEY", "").strip()
         if not enc_key:
-            enc_key = secrets.token_hex(32)
-            # Persist to .env if writable
+            # 1. Check persistent key file in data directory
+            key_file = BASE_DIR / "data" / ".encryption_key"
+            try:
+                if key_file.exists():
+                    saved_key = key_file.read_text(encoding="utf-8").strip()
+                    if len(saved_key) >= 32:
+                        enc_key = saved_key
+            except Exception:
+                pass
+
+            # 2. If still missing, derive stable deterministic key so server restarts/redeploys never invalidate wallet keys
+            if not enc_key:
+                import hashlib
+                bot_tok = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+                admin_id_str = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
+                salt = bot_tok or admin_id_str or "celo-permanent-encryption-salt-2026"
+                enc_key = hashlib.sha256(f"celo_wallet_encryption_stable_{salt}".encode("utf-8")).hexdigest()
+                try:
+                    key_file.parent.mkdir(parents=True, exist_ok=True)
+                    key_file.write_text(enc_key, encoding="utf-8")
+                except Exception:
+                    pass
+
+            # Also persist to .env if writable
             try:
                 if ENV_FILE.exists():
                     content = ENV_FILE.read_text(encoding="utf-8")
                     if "WALLET_ENCRYPTION_KEY=" in content:
-                        # Replace empty key
                         lines = content.splitlines()
                         new_lines = []
                         for line in lines:
@@ -153,6 +175,7 @@ class Config:
             explorer_url += "/"
 
         db_path = os.getenv("DATABASE_PATH", "data/faucet.db").strip()
+        db_url = os.getenv("DATABASE_URL", "").strip()
         dry_run_str = os.getenv("DRY_RUN", "false").strip().lower()
         dry_run = dry_run_str in ("1", "true", "yes", "on")
 
@@ -191,6 +214,7 @@ class Config:
             admin_web_password=admin_web_pwd,
             explorer_tx_url=explorer_url,
             database_path=db_path,
+            database_url=db_url,
             dry_run=dry_run,
         )
 
