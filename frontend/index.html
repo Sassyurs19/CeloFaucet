@@ -819,6 +819,10 @@
       <!-- Step 1: Selection between Connect and Import -->
       <div id="add-wallet-step-choice">
         <p class="description">Choose how you want to add your Celo wallet.</p>
+        <div style="background:var(--celo-green-light); border:1px solid rgba(53,208,127,0.3); border-radius:var(--radius-md); padding:10px 12px; margin-bottom:14px; font-size:12px; color:var(--celo-green-dark); display:flex; align-items:center; gap:8px;">
+          <i data-lucide="sparkles" class="icon-sm"></i>
+          <span><strong>Unlimited Wallets Supported:</strong> You can add 20+ wallets to your account. To connect another account, select it in MetaMask/OKX or import a distinct private key below.</span>
+        </div>
 
         <!-- Option A: Connect Wallet -->
         <div class="card-surface" style="cursor:pointer; transition:all 0.15s ease;" onclick="app.handleConnectInBrowserWallet()">

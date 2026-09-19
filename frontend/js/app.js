@@ -1594,17 +1594,35 @@ const app = (function () {
   async function handleConnectInBrowserWallet() {
     try {
       showToast('Connecting in-browser wallet...', 'info');
-      const address = await Web3Module.connectWallet();
+      // Pass forcePrompt=true to invoke wallet_requestPermissions so MetaMask / OKX opens account picker
+      const address = await Web3Module.connectWallet(true);
+
+      // Duplicate guard: prevent adding an address already added
+      const existing = (state.wallets || []).find(
+        (w) => w.address && w.address.toLowerCase() === address.toLowerCase()
+      );
+      if (existing) {
+        const existName = existing.name || existing.label || existing.wallet_name || 'an existing wallet';
+        showToast(
+          `Wallet (${formatShortAddress(address)}) is already in your account as "${existName}". To add another wallet, please switch accounts in MetaMask/OKX or import a new private key.`,
+          'warning',
+          7000
+        );
+        return;
+      }
+
+      const nextNum = (state.wallets?.length || 0) + 1;
+      const defaultName = `Connected Wallet ${nextNum}`;
 
       await apiRequest('/api/wallets/connect', {
         method: 'POST',
         body: JSON.stringify({
           address,
-          name: 'Connected In-Browser Wallet',
+          name: defaultName,
         }),
       });
 
-      showToast('Wallet connected successfully!', 'success');
+      showToast(`Wallet ${nextNum} connected successfully!`, 'success');
       closeModal('modal-add-wallet');
       await loadWallets();
     } catch (err) {
@@ -1632,15 +1650,18 @@ const app = (function () {
       btn.innerHTML = '<i data-lucide="loader-2" class="icon-sm" style="animation:spin 1s linear infinite;"></i> Encrypting & Importing...';
       renderIcons();
 
+      const nextNum = (state.wallets?.length || 0) + 1;
+      const walletName = name || `Imported Wallet ${nextNum}`;
+
       await apiRequest('/api/wallets/import', {
         method: 'POST',
         body: JSON.stringify({
           private_key: rawKey,
-          name: name || 'Imported Celo Wallet',
+          name: walletName,
         }),
       });
 
-      showToast('Wallet securely imported!', 'success');
+      showToast(`Wallet "${walletName}" securely imported!`, 'success');
       pkInput.value = '';
       labelInput.value = '';
       closeModal('modal-add-wallet');
@@ -1648,8 +1669,11 @@ const app = (function () {
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Import Wallet';
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="shield-check" class="icon-sm"></i> Securely Import Wallet';
+        renderIcons();
+      }
     }
   }
 

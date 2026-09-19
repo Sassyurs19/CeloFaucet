@@ -84,18 +84,38 @@ const Web3Module = (function () {
 
   /**
    * Request user to connect their EVM wallet.
+   * If forcePrompt is true, requests wallet_requestPermissions so MetaMask / OKX
+   * opens the account picker dialog rather than silently returning the active account.
    * Returns lowercase checksummed/normalized address.
    */
-  async function connectWallet() {
+  async function connectWallet(forcePrompt = false) {
     const provider = getProvider();
     if (!provider) {
       throw new Error('No EVM wallet detected. Please open in OKX Wallet, MetaMask, or Valora.');
     }
 
     try {
-      const accounts = await provider.request({
-        method: 'eth_requestAccounts',
-      });
+      let accounts = [];
+      if (forcePrompt && provider.request) {
+        try {
+          // EIP-2255: prompts MetaMask/OKX to show account selection dialog
+          await provider.request({
+            method: 'wallet_requestPermissions',
+            params: [{ eth_accounts: {} }],
+          });
+          accounts = await provider.request({ method: 'eth_accounts' });
+        } catch (permErr) {
+          if (permErr.code === 4001) {
+            throw new Error('Connection request was rejected by user.');
+          }
+          // Some wallets do not support wallet_requestPermissions; fall back gracefully
+          accounts = await provider.request({ method: 'eth_requestAccounts' });
+        }
+      } else {
+        accounts = await provider.request({
+          method: 'eth_requestAccounts',
+        });
+      }
 
       if (!accounts || accounts.length === 0) {
         throw new Error('No account returned from wallet.');

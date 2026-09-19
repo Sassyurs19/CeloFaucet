@@ -618,25 +618,31 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
     if not is_val or not chk_addr:
         return web.json_response({"error": err_msg or "Invalid Celo address format."}, status=400)
 
-    # If already added, update name/label if changed and return existing wallet
+    # Prevent duplicate wallet overwrite: check if address is already added by this user
     existing = await db.get_user_wallets(user_id)
     existing_wallet = next((w for w in existing if w["address"].lower() == chk_addr.lower()), None)
     if existing_wallet:
-        if name and name != existing_wallet["wallet_name"]:
-            await db.rename_user_wallet(existing_wallet["id"], user_id, name)
-            existing_wallet["wallet_name"] = name
-        w_id = existing_wallet["id"]
-        wallet_name = existing_wallet["wallet_name"]
-    else:
-        w_id = await db.add_user_wallet(
-            telegram_id=user_id,
-            wallet_name=name,
-            address=chk_addr,
-            wallet_type="connected",
-            encrypted_private_key=None,
-            user_id=user_id,
+        return web.json_response(
+            {
+                "error": f"Wallet {chk_addr[:6]}...{chk_addr[-4:]} is already in your account as '{existing_wallet['wallet_name']}'. To add another wallet, please switch accounts in your wallet extension (MetaMask/OKX) or import a new private key.",
+                "existing_wallet": {
+                    "id": existing_wallet["id"],
+                    "name": existing_wallet["wallet_name"],
+                    "address": existing_wallet["address"],
+                },
+            },
+            status=409,
         )
-        wallet_name = name
+
+    w_id = await db.add_user_wallet(
+        telegram_id=user_id,
+        wallet_name=name,
+        address=chk_addr,
+        wallet_type="connected",
+        encrypted_private_key=None,
+        user_id=user_id,
+    )
+    wallet_name = name
 
     celo_bal = await celo_client.get_celo_balance(chk_addr)
     _, usat_bal = await celo_client.get_usat_balance(chk_addr)
@@ -707,25 +713,31 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     formatted_key = None
     account = None
 
-    # Check if wallet already exists for this user (allow re-import and update seamlessly)
+    # Prevent duplicate wallet overwrite: check if address is already added by this user
     existing = await db.get_user_wallets(user_id)
     existing_wallet = next((w for w in existing if w["address"].lower() == derived_address.lower()), None)
     if existing_wallet:
-        if name and name != existing_wallet["wallet_name"]:
-            await db.rename_user_wallet(existing_wallet["id"], user_id, name)
-            existing_wallet["wallet_name"] = name
-        w_id = existing_wallet["id"]
-        wallet_name = existing_wallet["wallet_name"]
-    else:
-        w_id = await db.add_user_wallet(
-            telegram_id=user_id,
-            wallet_name=name,
-            address=derived_address,
-            wallet_type="imported",
-            encrypted_private_key=encrypted_key,
-            user_id=user_id,
+        return web.json_response(
+            {
+                "error": f"This private key corresponds to wallet {derived_address[:6]}...{derived_address[-4:]}, which is already in your account as '{existing_wallet['wallet_name']}'.",
+                "existing_wallet": {
+                    "id": existing_wallet["id"],
+                    "name": existing_wallet["wallet_name"],
+                    "address": existing_wallet["address"],
+                },
+            },
+            status=409,
         )
-        wallet_name = name
+
+    w_id = await db.add_user_wallet(
+        telegram_id=user_id,
+        wallet_name=name,
+        address=derived_address,
+        wallet_type="imported",
+        encrypted_private_key=encrypted_key,
+        user_id=user_id,
+    )
+    wallet_name = name
 
     celo_bal = await celo_client.get_celo_balance(derived_address)
     _, usat_bal = await celo_client.get_usat_balance(derived_address)
