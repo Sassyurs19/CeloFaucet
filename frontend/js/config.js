@@ -8,9 +8,9 @@
  * window.API_BASE_URL = "https://celo-usdt-backend.onrender.com";
  */
 (function () {
-  // Support both standard window.API_BASE_URL and Vite-style VITE_API_URL
+  // Support window.API_BASE_URL, Vite-style VITE_API_URL, localStorage override, or default to production Render URL
   const storedUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-  const configuredUrl = window.VITE_API_URL || window.API_BASE_URL || storedUrl || '';
+  const configuredUrl = window.VITE_API_URL || window.API_BASE_URL || storedUrl || 'https://celofaucet.onrender.com';
   
-  window.API_BASE_URL = configuredUrl ? configuredUrl.replace(/\/$/, '') : '';
+  window.API_BASE_URL = configuredUrl.replace(/\/$/, '');
 })();
