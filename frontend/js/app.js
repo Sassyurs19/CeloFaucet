@@ -132,6 +132,11 @@ const app = (function () {
   }
 
   function handleStandaloneFallback(endpoint, options = {}) {
+    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
+    const baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
+    if (baseUrl) {
+      throw new Error(`Production request failed for ${endpoint}`);
+    }
     const method = (options.method || 'GET').toUpperCase();
     let body = {};
     try {
@@ -406,53 +411,48 @@ const app = (function () {
       headers['X-Admin-Token'] = state.adminToken;
     }
 
+    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
+    const baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
+    const url = (baseUrl && endpoint.startsWith('/')) ? `${baseUrl}${endpoint}` : endpoint;
+    
+    let resp = null;
+    let isJson = false;
+
     try {
-      const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-      const baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
-      const url = (baseUrl && endpoint.startsWith('/')) ? `${baseUrl}${endpoint}` : endpoint;
-      
-      let resp = null;
-      let isJson = false;
-
-      try {
-        resp = await fetch(url, {
-          ...options,
-          headers,
-        });
-        const contentType = resp.headers.get('content-type') || '';
-        isJson = contentType.includes('application/json');
-      } catch (fetchErr) {
-        if (baseUrl) {
-          throw new Error('Unable to connect to Render backend API. Please verify the service is running.');
-        }
-        isJson = false;
+      resp = await fetch(url, {
+        ...options,
+        headers,
+      });
+      const contentType = resp.headers.get('content-type') || '';
+      isJson = contentType.includes('application/json');
+    } catch (fetchErr) {
+      if (baseUrl) {
+        throw new Error('Unable to connect to Render backend API. Please verify your connection or try again.');
       }
+      isJson = false;
+    }
 
-      // If backend API is not available or returned non-JSON HTML (static Firebase rewrite)
-      if (!resp || !isJson) {
-        if (baseUrl) {
-          throw new Error(`Invalid response (${resp ? resp.status : 'offline'}) from backend.`);
-        }
-        return handleStandaloneFallback(endpoint, options);
+    // If backend API is not available or returned non-JSON HTML (static Firebase rewrite)
+    if (!resp || !isJson) {
+      if (baseUrl) {
+        throw new Error(`Invalid response (${resp ? resp.status : 'offline'}) from backend.`);
       }
-
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok) {
-        if (resp.status === 401 && !endpoint.includes('/admin/')) {
-          handleLogout(false);
-        }
-        throw new Error(data.error || data.message || `Server error (${resp.status})`);
-      }
-
-      return data;
-    } catch (err) {
-      if (err.message && (err.message.includes('Render') || err.message.includes('backend') || err.message.includes('Server error') || err.message.includes('Unable to connect'))) {
-        throw err;
-      }
-      console.warn(`[API Client] Falling back to standalone engine for ${endpoint}:`, err);
       return handleStandaloneFallback(endpoint, options);
     }
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      // If a protected session endpoint returns 401, log out (session expired/invalid)
+      // DO NOT call handleLogout on login, register, or admin auth attempts
+      const isAuthAttempt = endpoint.includes('/auth/login') || endpoint.includes('/auth/register') || endpoint.includes('/admin/login');
+      if (resp.status === 401 && !isAuthAttempt) {
+        handleLogout(false);
+      }
+      throw new Error(data.error || data.message || `Server error (${resp.status})`);
+    }
+
+    return data;
   }
 
   // --- Routing & View Navigation ---
@@ -549,7 +549,11 @@ const app = (function () {
   // --- Authentication ---
 
   async function checkSession() {
-    if (!state.sessionToken) {
+    if (!state.sessionToken || state.sessionToken.startsWith('standalone_')) {
+      if (state.sessionToken) {
+        localStorage.removeItem(STORAGE_KEY_TOKEN);
+        state.sessionToken = null;
+      }
       updateAdminVisibility();
       showAuthView();
       return;
@@ -681,11 +685,15 @@ const app = (function () {
       updateAdminVisibility();
       navigateTo('dashboard');
     } catch (err) {
+      let displayMsg = err.message;
+      if (err.message && err.message.toLowerCase().includes('invalid mobile number or password')) {
+        displayMsg = 'Invalid mobile number or password. If you have not created an account on this server yet, please click "Create Account" below.';
+      }
       if (errAlert) {
-        errAlert.textContent = err.message;
+        errAlert.textContent = displayMsg;
         errAlert.style.display = 'block';
       }
-      showToast(err.message, 'error');
+      showToast(displayMsg, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Login';
