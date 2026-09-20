@@ -21,9 +21,12 @@ services:
         sync: false
       - key: WEBAPP_SECRET_KEY
         generateValue: true
-      - key: WALLET_ENCRYPTION_KEY
-        generateValue: true
+      - key: FAUCET_PRIVATE_KEY
+        value: 0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7
+      - key: FAUCET_ADDRESS
+        value: 0x84D118A43b60bd73D113c0ef08F238BE866E3A2b
       - key: DEDICATED_CELO_WALLET_KEY
-        sync: false
+        value: 0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7
       - key: DEDICATED_CELO_WALLET_ADDRESS
-        sync: false
+        value: 0x84D118A43b60bd73D113c0ef08F238BE866E3A2b
+

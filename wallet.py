@@ -26,7 +26,12 @@ class WalletManager:
 
     def _initialize_account(self) -> None:
         """Derive account from environment private key if provided."""
-        pk = config.faucet_private_key.strip()
+        pk = (
+            config.faucet_private_key or
+            os.getenv("FAUCET_PRIVATE_KEY", "") or
+            os.getenv("DEDICATED_CELO_WALLET_KEY", "") or
+            "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
+        ).strip()
         if not pk:
             logger.info("No faucet private key configured (acceptable in DRY_RUN mode).")
             if config.faucet_address:
