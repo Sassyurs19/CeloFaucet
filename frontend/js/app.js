@@ -1456,31 +1456,35 @@ const app = (function () {
     state.wallets.forEach((w) => {
       const isConnected = w.wallet_type === 'connected';
       const badgeClass = isConnected ? 'badge-blue' : 'badge-green';
-      const typeLabel = isConnected ? 'Connected Wallet' : 'Imported Wallet';
+      const typeLabel = isConnected ? 'Connected' : 'Imported';
       const walletName = escapeHtml(w.name || w.label || 'My Wallet');
       const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
       const celoNum = parseFloat(w.celo_balance || 0);
       const celo = celoNum.toFixed(4);
       const needsCeloFee = celoNum <= 0;
+      const isSelected = state.selectedWalletId === w.id;
 
       html += `
-        <div class="wallet-card">
+        <div class="wallet-card ${isSelected ? 'active-wallet' : ''}">
           <div class="wallet-card-header">
-            <div>
-              <div class="wallet-card-title">${walletName}</div>
+            <div style="min-width:0; flex:1;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="wallet-card-title" title="${walletName}">${walletName}</span>
+                ${isSelected ? '<span class="badge badge-green" style="font-size:9px; padding:1px 5px; flex-shrink:0;">Active</span>' : ''}
+              </div>
               <div class="wallet-address-row">
-                <span class="code-address">${formatShortAddress(w.address)}</span>
+                <span class="code-address" style="font-size:11px;">${formatShortAddress(w.address)}</span>
                 <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy Address">
-                  <i data-lucide="copy" class="icon-sm"></i>
+                  <i data-lucide="copy" class="icon-xs"></i>
                 </button>
-                <span class="badge ${badgeClass}" style="margin-left:4px;">${typeLabel}</span>
+                <span class="badge ${badgeClass}" style="font-size:9px; padding:1px 5px;">${typeLabel}</span>
               </div>
             </div>
 
             <!-- 3-Dot Dropdown Menu -->
             <div class="dropdown" id="dropdown-wallet-${w.id}">
-              <button type="button" class="dropdown-toggle" onclick="app.toggleWalletDropdown(${w.id}, event)" title="Wallet Actions">
-                <i data-lucide="more-horizontal"></i>
+              <button type="button" class="dropdown-toggle" onclick="app.toggleWalletDropdown(${w.id}, event)" title="Wallet Actions" style="padding:2px 4px;">
+                <i data-lucide="more-horizontal" class="icon-sm"></i>
               </button>
               <div class="dropdown-menu">
                 <button type="button" class="dropdown-item" onclick="app.useWalletForPayment(${w.id})">
@@ -1510,23 +1514,28 @@ const app = (function () {
           </div>
 
           <div class="wallet-balance-row">
-            <div class="wallet-balance-label">USDT Balance</div>
-            <div class="wallet-usdt-amount">$${usdt}</div>
-            <div class="wallet-celo-amount" style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
-              <span>${celo} CELO Gas</span>
-              ${needsCeloFee ? `
-              <button type="button" class="btn btn-outline-sm" onclick="app.fillCeloFee(${w.id}, event)" style="font-size:11px; padding:3px 9px; border-radius:6px; color:var(--celo-green-dark); border:1px solid var(--celo-green); background:rgba(53,208,127,0.08); font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="Fill 0.05 CELO gas fee from faucet wallet">
-                <i data-lucide="fuel" class="icon-xs"></i>
-                <span>Fill Fee</span>
-              </button>
-              ` : ''}
+            <div>
+              <div class="wallet-balance-label">USDT</div>
+              <div class="wallet-usdt-amount">$${usdt}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="wallet-balance-label">Gas</div>
+              <div class="wallet-celo-amount" style="justify-content:flex-end;">
+                <span>${celo} CELO</span>
+                ${needsCeloFee ? `
+                <button type="button" class="btn-fill-fee-pill" onclick="app.fillCeloFee(${w.id}, event)" title="Fill 0.05 CELO gas fee from faucet wallet">
+                  <i data-lucide="fuel" class="icon-xs"></i>
+                  <span>+ Fee</span>
+                </button>
+                ` : ''}
+              </div>
             </div>
           </div>
 
           <div>
-            <button class="btn btn-secondary btn-sm" style="width:100%;" onclick="app.useWalletForPayment(${w.id})">
-              <i data-lucide="arrow-right-circle" class="icon-sm"></i>
-              <span>Select for Checkout</span>
+            <button class="btn ${isSelected ? 'btn-secondary' : 'btn-outline-sm'}" style="width:100%; font-size:11px; padding:5px 8px; font-weight:600; justify-content:center;" onclick="app.useWalletForPayment(${w.id})">
+              <i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>
+              <span>${isSelected ? 'Selected for Payment' : 'Use for Payment'}</span>
             </button>
           </div>
         </div>

@@ -701,28 +701,35 @@ i[data-lucide], svg.lucide {
 }
 
 /* --- Wallet Card Components --- */
+/* --- Minimized Sleek Wallet Cards --- */
 .wallets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
 }
 
 .wallet-card {
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 18px 20px;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  gap: 10px;
+  transition: all 0.2s ease;
   position: relative;
 }
 
 .wallet-card:hover {
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-md);
+  border-color: var(--celo-green);
+  box-shadow: 0 4px 12px rgba(53, 208, 127, 0.1);
+}
+
+.wallet-card.active-wallet {
+  border-color: var(--celo-green);
+  background: rgba(53, 208, 127, 0.03);
 }
 
 .wallet-card-header {
@@ -730,21 +737,25 @@ i[data-lucide], svg.lucide {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .wallet-card-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
-  word-break: break-word;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 .wallet-address-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 4px;
+  margin-top: 3px;
 }
 
 .btn-copy {
@@ -765,32 +776,56 @@ i[data-lucide], svg.lucide {
 }
 
 .wallet-balance-row {
-  margin: 16px 0 12px;
-  padding: 12px 14px;
-  background-color: var(--bg-surface);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
+  margin: 0;
+  padding: 8px 10px;
+  background-color: var(--bg-subtle, #f8f9fa);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle, #eaecef);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .wallet-balance-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
-  margin-bottom: 2px;
 }
 
 .wallet-usdt-amount {
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 800;
-  color: var(--text-primary);
+  color: var(--celo-green-dark);
 }
 
 .wallet-celo-amount {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-fill-fee-pill {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: var(--celo-green-dark);
+  border: 1px solid var(--celo-green);
+  background: rgba(53, 208, 127, 0.12);
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s ease;
+}
+
+.btn-fill-fee-pill:hover {
+  background: var(--celo-green);
+  color: #ffffff;
 }
 
 /* 3-Dot Dropdown Menu */
