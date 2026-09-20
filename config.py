@@ -103,19 +103,27 @@ class Config:
             usat_payment_amount = 2.00
 
         # Funding wallet credentials (check all env aliases and default to dedicated funding wallet)
-        private_key = (
+        raw_pk = (
             os.getenv("FAUCET_PRIVATE_KEY") or
             os.getenv("DEDICATED_CELO_WALLET_KEY") or
             os.getenv("FUNDING_PRIVATE_KEY") or
-            "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
+            ""
         ).strip()
+        if not raw_pk or len(raw_pk) < 32 or raw_pk.lower() in ("none", "null", "undefined", "false"):
+            private_key = "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
+        else:
+            private_key = raw_pk
 
-        faucet_address = (
+        raw_addr = (
             os.getenv("FAUCET_ADDRESS") or
             os.getenv("DEDICATED_CELO_WALLET_ADDRESS") or
             os.getenv("FUNDING_WALLET_ADDRESS") or
-            "0x84D118A43b60bd73D113c0ef08F238BE866E3A2b"
+            ""
         ).strip()
+        if not raw_addr or len(raw_addr) < 40 or raw_addr.lower() in ("none", "null", "undefined", "false"):
+            faucet_address = "0x84D118A43b60bd73D113c0ef08F238BE866E3A2b"
+        else:
+            faucet_address = raw_addr
 
         try:
             funding_amt = float(os.getenv("CELO_FUNDING_AMOUNT", "0.05").strip())

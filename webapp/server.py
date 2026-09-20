@@ -15,6 +15,7 @@ from web3 import Web3
 from config import config
 from database import db
 from celo import celo_client
+from wallet import wallet_manager
 
 logger = logging.getLogger(__name__)
 
@@ -528,7 +529,9 @@ async def handle_health_check(request: web.Request) -> web.Response:
     """Production health check returning HTTP 200 with service status."""
     return web.json_response({
         "status": "ok",
-        "service": "celo-usdt-api"
+        "service": "celo-usdt-api",
+        "faucet_wallet": wallet_manager.address,
+        "is_configured": wallet_manager.is_configured,
     }, status=200)
 
 
