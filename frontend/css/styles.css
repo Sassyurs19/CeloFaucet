@@ -1027,7 +1027,7 @@ i[data-lucide], svg.lucide {
   padding: 24px 20px;
   box-shadow: 0 20px 45px -12px rgba(16, 185, 129, 0.09), 0 4px 18px rgba(0, 0, 0, 0.04);
   position: relative;
-  overflow: hidden;
+  overflow: visible; /* Allow floating custom wallet dropdown without clipping */
   transition: all 0.25s ease;
 }
 
@@ -1049,6 +1049,17 @@ i[data-lucide], svg.lucide {
   border-radius: 20px;
   padding: 14px 16px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+#dash-from-wallet-capsule {
+  position: relative;
+  z-index: 20;
+}
+
+#dash-from-wallet-capsule.dropdown-open,
+#dash-from-wallet-capsule:has(.wallet-custom-dropdown.is-open) {
+  z-index: 99999 !important;
 }
 
 .pay-capsule:focus-within {
@@ -1733,6 +1744,7 @@ body.in-auth-mode .container {
   position: relative;
   width: 100%;
   user-select: none;
+  z-index: 25;
 }
 
 .wallet-custom-trigger {
@@ -1746,6 +1758,8 @@ body.in-auth-mode .container {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: var(--shadow-sm);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .wallet-custom-trigger:hover {
@@ -1829,13 +1843,15 @@ body.in-auth-mode .container {
   background: #ffffff;
   border: 1.5px solid var(--border-color);
   border-radius: 14px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2), 0 4px 14px rgba(0, 0, 0, 0.08);
   max-height: 290px;
   overflow-y: auto;
-  z-index: 100;
+  -webkit-overflow-scrolling: touch;
+  z-index: 99999 !important;
   padding: 6px;
   display: none;
   animation: dropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: pan-y;
 }
 
 .wallet-custom-dropdown.is-open {
@@ -1857,12 +1873,15 @@ body.in-auth-mode .container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.15s ease;
   border: 1px solid transparent;
   margin-bottom: 3px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(53, 208, 127, 0.2);
+  user-select: none;
 }
 
 .wallet-option-item:last-child {

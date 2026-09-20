@@ -109,5 +109,11 @@ class TestCancelAndSort(AioHTTPTestCase):
         self.assertTrue(new_p_data["success"])
         print(f"[OK] New payment created successfully after cancellation: {new_p_data['payment_id']}")
 
+        # 9. Clean up test payment and test wallets to keep DB clean
+        await self.client.post(f"/api/payments/{new_p_data['payment_id']}/cancel", headers=headers)
+        async with db.connect() as conn:
+            await conn.execute("DELETE FROM user_wallets WHERE wallet_name IN ('Zebra Vault', 'Alpha Stash', 'Beta Reserve')")
+            await conn.commit()
+
 if __name__ == "__main__":
     unittest.main()

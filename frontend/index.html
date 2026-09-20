@@ -258,6 +258,9 @@
                     <div class="wallet-trigger-top">
                       <span class="wallet-trigger-address" id="trigger-wallet-address">Choose sending wallet</span>
                       <span class="badge badge-green" id="trigger-wallet-badge" style="display:none; font-size:9px; padding:1px 5px;">Imported</span>
+                      <button type="button" class="btn-copy" id="btn-trigger-copy-address" style="display:none; padding:1px 5px; height:18px; border:none; background:transparent; cursor:pointer;" onclick="event.stopPropagation(); app.copySelectedAddress();" title="Copy Address">
+                        <i data-lucide="copy" class="icon-xs"></i>
+                      </button>
                     </div>
                     <div class="wallet-trigger-bottom" id="trigger-wallet-subtext">
                       <span class="wallet-trigger-name" id="trigger-wallet-name">Click to select wallet</span>
@@ -281,24 +284,6 @@
                 <select id="select-send-wallet" style="display:none;" onchange="app.handleWalletSelected()">
                   <option value="">-- Choose sending wallet --</option>
                 </select>
-              </div>
-
-              <!-- Selected Wallet Gas & Detail Strip -->
-              <div id="dash-wallet-summary-box" style="display:none; margin-top:8px; padding:6px 10px; background:#ffffff; border:1px solid var(--border-color); border-radius:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span class="code-address" id="dash-selected-wallet-address" style="font-size:11px;">(0x...)</span>
-                  <button type="button" class="btn-copy" onclick="app.copySelectedAddress()" title="Copy Address">
-                    <i data-lucide="copy" class="icon-xs"></i>
-                  </button>
-                </div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="color:var(--text-muted); font-size:11px;">Gas:</span>
-                  <strong id="dash-selected-wallet-celo" style="font-size:11px; color:var(--text-primary);">0.00 CELO</strong>
-                  <button type="button" id="btn-dash-fill-celo" class="btn-fill-fee-pill" onclick="app.fillCeloFeeForSelected()" style="display:none;" title="Fill 0.05 CELO fee from faucet">
-                    <i data-lucide="fuel" class="icon-xs"></i>
-                    <span>+ Fill Fee</span>
-                  </button>
-                </div>
               </div>
             </div>
 

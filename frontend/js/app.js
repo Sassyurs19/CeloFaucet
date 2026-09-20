@@ -1027,34 +1027,44 @@ const app = (function () {
   }
 
   function toggleWalletDropdownCustom(event) {
-    if (event) event.stopPropagation();
+    if (event) {
+      event.stopPropagation();
+    }
     const dropdown = document.getElementById('custom-wallet-dropdown');
     const trigger = document.getElementById('custom-wallet-trigger');
+    const capsule = document.getElementById('dash-from-wallet-capsule');
     if (!dropdown || !trigger) return;
     const isOpen = dropdown.classList.contains('is-open');
     if (isOpen) {
       dropdown.classList.remove('is-open');
       trigger.classList.remove('is-open');
+      if (capsule) capsule.classList.remove('dropdown-open');
     } else {
       dropdown.classList.add('is-open');
       trigger.classList.add('is-open');
+      if (capsule) capsule.classList.add('dropdown-open');
     }
   }
 
   function closeCustomWalletDropdown() {
     const dropdown = document.getElementById('custom-wallet-dropdown');
     const trigger = document.getElementById('custom-wallet-trigger');
+    const capsule = document.getElementById('dash-from-wallet-capsule');
     if (dropdown) dropdown.classList.remove('is-open');
     if (trigger) trigger.classList.remove('is-open');
+    if (capsule) capsule.classList.remove('dropdown-open');
   }
 
-  function selectCustomWallet(walletId) {
-    const select = document.getElementById('select-send-wallet');
-    if (select) {
-      select.value = walletId;
+  function selectCustomWallet(walletId, event) {
+    if (event) {
+      event.stopPropagation();
     }
     state.selectedWalletId = walletId;
-    handleWalletSelected();
+    const select = document.getElementById('select-send-wallet');
+    if (select) {
+      select.value = String(walletId);
+    }
+    handleWalletSelected(walletId);
     closeCustomWalletDropdown();
   }
 
@@ -1082,7 +1092,7 @@ const app = (function () {
       } else {
         state.wallets.forEach((w) => {
           const opt = document.createElement('option');
-          opt.value = w.id;
+          opt.value = String(w.id);
           const name = w.name || w.label || 'My Wallet';
           const shortAddr = formatShortAddress(w.address);
           const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
@@ -1092,11 +1102,11 @@ const app = (function () {
       }
     }
 
-    if (state.selectedWalletId && state.wallets.some((w) => w.id === state.selectedWalletId)) {
-      if (select) select.value = state.selectedWalletId;
+    if (state.selectedWalletId && state.wallets.some((w) => String(w.id) === String(state.selectedWalletId))) {
+      if (select) select.value = String(state.selectedWalletId);
     } else if (state.wallets.length > 0) {
       state.selectedWalletId = state.wallets[0].id;
-      if (select) select.value = state.wallets[0].id;
+      if (select) select.value = String(state.wallets[0].id);
     } else {
       state.selectedWalletId = null;
     }
@@ -1112,14 +1122,16 @@ const app = (function () {
       } else {
         let optionsHtml = '';
         state.wallets.forEach((w) => {
-          const isSelected = state.selectedWalletId === w.id;
+          const isSelected = String(state.selectedWalletId) === String(w.id);
           const wType = (w.wallet_type || w.type || 'connected').toLowerCase();
           const name = w.name || w.label || 'My Wallet';
           const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
           const celo = parseFloat(w.celo_balance || 0).toFixed(4);
 
           optionsHtml += `
-            <div class="wallet-option-item ${isSelected ? 'selected' : ''}" onclick="app.selectCustomWallet(${w.id})">
+            <div class="wallet-option-item ${isSelected ? 'selected' : ''}" 
+                 data-wallet-id="${w.id}" 
+                 onclick="app.selectCustomWallet('${w.id}', event)">
               <div class="wallet-option-info">
                 <div class="wallet-option-top">
                   <span title="${w.address}">${formatShortAddress(w.address)}</span>
@@ -1150,13 +1162,10 @@ const app = (function () {
     handleWalletSelected();
   }
 
-  function handleWalletSelected() {
+  function handleWalletSelected(overrideId) {
     const select = document.getElementById('select-send-wallet');
-    const summaryBox = document.getElementById('dash-wallet-summary-box');
     const fromBalBadge = document.getElementById('dash-from-wallet-balance');
     const availUsdtEl = document.getElementById('dash-avail-usdt');
-    const selectedAddrEl = document.getElementById('dash-selected-wallet-address');
-    const selectedCeloEl = document.getElementById('dash-selected-wallet-celo');
 
     // Trigger box elements (Website theme: Top is address, below is wallet name & gas fee)
     const triggerAddr = document.getElementById('trigger-wallet-address');
@@ -1164,26 +1173,29 @@ const app = (function () {
     const triggerName = document.getElementById('trigger-wallet-name');
     const triggerGas = document.getElementById('trigger-wallet-gas');
     const triggerGasText = document.getElementById('trigger-wallet-gas-text');
+    const triggerCopyBtn = document.getElementById('btn-trigger-copy-address');
 
-    const walletId = state.selectedWalletId || parseInt(select?.value, 10);
-    const wallet = state.wallets.find((w) => w.id === walletId);
+    const walletId = (overrideId !== undefined && overrideId !== null)
+      ? overrideId
+      : (state.selectedWalletId || select?.value);
+
+    const wallet = state.wallets.find((w) => String(w.id) === String(walletId));
 
     if (!wallet) {
       state.selectedWalletId = null;
-      if (summaryBox) summaryBox.style.display = 'none';
       if (fromBalBadge) fromBalBadge.textContent = '$0.00 USDT';
       if (availUsdtEl) availUsdtEl.textContent = '0.00';
       if (triggerAddr) triggerAddr.textContent = 'Choose sending wallet';
       if (triggerBadge) triggerBadge.style.display = 'none';
       if (triggerName) triggerName.textContent = 'Click to select wallet';
       if (triggerGas) triggerGas.style.display = 'none';
+      if (triggerCopyBtn) triggerCopyBtn.style.display = 'none';
       renderIcons();
       return;
     }
 
-    state.selectedWalletId = walletId;
-    if (select) select.value = walletId;
-    if (summaryBox) summaryBox.style.display = 'flex';
+    state.selectedWalletId = wallet.id;
+    if (select) select.value = String(wallet.id);
 
     const usat = parseFloat(wallet.usat_balance || 0);
     const celo = parseFloat(wallet.celo_balance || 0);
@@ -1193,8 +1205,6 @@ const app = (function () {
 
     if (fromBalBadge) fromBalBadge.textContent = `$${usat.toFixed(2)} USDT`;
     if (availUsdtEl) availUsdtEl.textContent = usat.toFixed(2);
-    if (selectedAddrEl) selectedAddrEl.textContent = shortAddr;
-    if (selectedCeloEl) selectedCeloEl.textContent = `${celo.toFixed(4)} CELO`;
 
     // Update Custom Trigger Display: Top displays address, below displays wallet name & gas fee
     if (triggerAddr) triggerAddr.textContent = shortAddr;
@@ -1203,6 +1213,7 @@ const app = (function () {
       triggerBadge.className = `badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}`;
       triggerBadge.textContent = wType === 'connected' ? 'Connected' : 'Imported';
     }
+    if (triggerCopyBtn) triggerCopyBtn.style.display = 'inline-flex';
     if (triggerName) triggerName.textContent = wName;
     if (triggerGas) {
       triggerGas.style.display = 'inline-flex';
@@ -1211,14 +1222,11 @@ const app = (function () {
 
     // Synchronize selected highlight in custom dropdown
     document.querySelectorAll('.wallet-option-item').forEach((item) => {
-      const isMatch = item.getAttribute('onclick')?.includes(`selectCustomWallet(${walletId})`);
+      const itemWalletId = item.getAttribute('data-wallet-id');
+      const isMatch = String(itemWalletId) === String(wallet.id);
       item.classList.toggle('selected', Boolean(isMatch));
     });
 
-    const fillFeeBtn = document.getElementById('btn-dash-fill-celo');
-    if (fillFeeBtn) {
-      fillFeeBtn.style.display = celo <= 0 ? 'inline-flex' : 'none';
-    }
     renderIcons();
   }
 
@@ -2753,13 +2761,15 @@ const app = (function () {
     checkSession();
     renderIcons();
 
-    // Close custom wallet dropdown when clicking outside
-    document.addEventListener('click', (e) => {
+    // Close custom wallet dropdown when clicking/tapping outside
+    const handleOutsideInteraction = (e) => {
       const container = document.getElementById('custom-wallet-select-container');
       if (container && !container.contains(e.target)) {
         closeCustomWalletDropdown();
       }
-    });
+    };
+    document.addEventListener('click', handleOutsideInteraction);
+    document.addEventListener('touchend', handleOutsideInteraction, { passive: true });
   }
 
   function configureApiUrl() {
