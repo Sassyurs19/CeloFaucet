@@ -956,6 +956,23 @@
           </div>
         </div>
 
+        <!-- Private Key Input for wallets that don't have it saved yet -->
+        <div id="confirm-pk-section" style="display:none; background:rgba(49, 130, 206, 0.08); border:1px solid rgba(49, 130, 206, 0.25); border-radius:10px; padding:12px 14px; margin-bottom:16px;">
+          <label class="form-label" style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+            <i data-lucide="key-round" class="icon-xs" style="color:var(--accent-blue);"></i>
+            <span>Wallet Private Key Required</span>
+          </label>
+          <div class="input-password-wrapper">
+            <input type="password" id="confirm-signing-pk" class="form-input" placeholder="Paste 64-character private key to sign transfer" autocomplete="off" style="font-size:13px;">
+            <button type="button" class="input-password-toggle" onclick="app.togglePasswordVisibility('confirm-signing-pk', this)">
+              <i data-lucide="eye" class="icon-sm"></i>
+            </button>
+          </div>
+          <div class="form-help" style="font-size:11px; margin-top:4px; color:var(--text-muted);">
+            This wallet has no stored key. It will be encrypted via AES-256-GCM so future payments are 1-click.
+          </div>
+        </div>
+
         <!-- Mandatory Disclaimer -->
         <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 14px; font-size: 13px; color: #d97706; line-height: 1.5; display: flex; align-items: flex-start; gap: 10px;">
           <i data-lucide="alert-triangle" class="icon-sm" style="flex-shrink:0; margin-top:2px;"></i>

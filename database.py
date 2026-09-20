@@ -628,6 +628,35 @@ class Database:
             await conn.commit()
             return cur.lastrowid or 0
 
+    async def update_wallet_private_key(
+        self,
+        wallet_id: int,
+        encrypted_private_key: str,
+        wallet_name: Optional[str] = None,
+    ) -> bool:
+        """Upgrade/link an existing wallet with an encrypted private key and set type to 'imported'."""
+        async with self.connect() as conn:
+            if wallet_name:
+                await conn.execute(
+                    """
+                    UPDATE user_wallets 
+                    SET encrypted_private_key = ?, wallet_type = 'imported', wallet_name = ?
+                    WHERE id = ?;
+                    """,
+                    (encrypted_private_key, wallet_name.strip(), wallet_id),
+                )
+            else:
+                await conn.execute(
+                    """
+                    UPDATE user_wallets 
+                    SET encrypted_private_key = ?, wallet_type = 'imported'
+                    WHERE id = ?;
+                    """,
+                    (encrypted_private_key, wallet_id),
+                )
+            await conn.commit()
+            return True
+
     async def get_user_wallets(self, user_identifier: int) -> list[dict[str, Any]]:
         """Retrieve all wallets owned by a specific user (matching user_id or telegram_id)."""
         async with self.connect() as conn:

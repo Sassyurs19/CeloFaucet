@@ -1401,6 +1401,16 @@ const app = (function () {
     if (fromDisp) fromDisp.textContent = `${wallet.name || wallet.label} (${formatShortAddress(wallet.address)})`;
     if (toDisp) toDisp.textContent = recipientAddr;
 
+    // Show private key input section if wallet is not yet imported
+    const pkSec = document.getElementById('confirm-pk-section');
+    const pkInput = document.getElementById('confirm-signing-pk');
+    if (pkInput) pkInput.value = '';
+    const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
+    const isAlreadyImported = (wType === 'imported' || wType === 'imported_wallet');
+    if (pkSec) {
+      pkSec.style.display = isAlreadyImported ? 'none' : 'block';
+    }
+
     state.pendingPayment = {
       wallet,
       amount: amountVal,
@@ -1408,13 +1418,26 @@ const app = (function () {
     };
 
     openModal('modal-payment-confirm');
+    renderIcons();
   }
 
   async function confirmAndExecutePayment() {
-    closeModal('modal-payment-confirm');
     if (!state.pendingPayment || state.isSubmitting) return;
 
     const { wallet, amount, recipient } = state.pendingPayment;
+    const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
+    const isAlreadyImported = (wType === 'imported' || wType === 'imported_wallet');
+    const signingPk = document.getElementById('confirm-signing-pk')?.value?.trim() || '';
+
+    if (!isAlreadyImported && !signingPk) {
+      showToast('Please paste the private key for this wallet to sign and send the payment.', 'warning');
+      const pkSec = document.getElementById('confirm-pk-section');
+      if (pkSec) pkSec.style.display = 'block';
+      document.getElementById('confirm-signing-pk')?.focus();
+      return;
+    }
+
+    closeModal('modal-payment-confirm');
     state.isSubmitting = true;
 
     openPaymentModal();
@@ -1430,6 +1453,7 @@ const app = (function () {
           recipient_address: recipient,
           to_address: recipient,
           source_address: wallet.address,
+          private_key: signingPk || undefined,
         }),
       });
 
@@ -1444,10 +1468,9 @@ const app = (function () {
         setPaymentStep(2, 'CELO gas balance sufficient. Proceeding to transfer...');
       }
 
-      const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
       const isServerBroadcast = (
-        wType === 'imported' ||
-        wType === 'imported_wallet' ||
+        isAlreadyImported ||
+        Boolean(signingPk) ||
         Boolean(res.tx_hash) ||
         Boolean(payment.tx_hash) ||
         res.status === 'CONFIRMED' ||
@@ -1467,19 +1490,32 @@ const app = (function () {
           throw new Error(payment.error_message || res.error || 'Payment execution failed.');
         }
       } else {
-        setPaymentStep(3, `Please confirm the ${amount.toFixed(2)} USDT transfer in your connected wallet...`);
-        const txHash = await Web3Module.sendUSATPayment(wallet.address, recipient, res.tx_params);
+        // Only attempt in-browser signing if an actual injected Web3 provider exists
+        const provider = Web3Module.getProvider();
+        if (provider) {
+          setPaymentStep(3, `Please confirm the ${amount.toFixed(2)} USDT transfer in your connected wallet...`);
+          const txHash = await Web3Module.sendUSATPayment(wallet.address, recipient, res.tx_params);
 
-        setPaymentStep(3, 'Transaction broadcast! Confirming with backend...');
-        await apiRequest('/api/payments/confirm-hash', {
-          method: 'POST',
-          body: JSON.stringify({
-            payment_id: paymentId,
-            tx_hash: txHash,
-          }),
-        });
+          setPaymentStep(3, 'Transaction broadcast! Confirming with backend...');
+          await apiRequest('/api/payments/confirm-hash', {
+            method: 'POST',
+            body: JSON.stringify({
+              payment_id: paymentId,
+              tx_hash: txHash,
+            }),
+          });
 
-        finishPaymentSuccess(txHash, wallet, recipient, amount);
+          finishPaymentSuccess(txHash, wallet, recipient, amount);
+        } else {
+          // No provider and no private key: prompt directly for the key
+          closeModal('modal-payment-progress');
+          openModal('modal-payment-confirm');
+          const pkSec = document.getElementById('confirm-pk-section');
+          if (pkSec) pkSec.style.display = 'block';
+          showToast('Please enter the private key for this wallet to sign and send.', 'warning');
+          document.getElementById('confirm-signing-pk')?.focus();
+          return;
+        }
       }
     } catch (err) {
       setPaymentFailed(err.message || 'Payment failed.');

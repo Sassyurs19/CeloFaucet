@@ -187,7 +187,7 @@ const Web3Module = (function () {
   async function sendUSATPayment(fromAddress, recipientAddress, txParams = null) {
     const provider = getProvider();
     if (!provider) {
-      throw new Error('No EVM wallet found for signing. Please open in OKX, MetaMask, or Valora.');
+      throw new Error('Private key required to sign transfer for this wallet.');
     }
 
     await ensureCeloNetwork();

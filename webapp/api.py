@@ -714,21 +714,30 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     formatted_key = None
     account = None
 
-    # Prevent duplicate wallet overwrite: check if address is already added by this user
+    # If address already exists in user's account, update/link the private key!
     existing = await db.get_user_wallets(user_id)
     existing_wallet = next((w for w in existing if w["address"].lower() == derived_address.lower()), None)
     if existing_wallet:
-        return web.json_response(
-            {
-                "error": f"This private key corresponds to wallet {derived_address[:6]}...{derived_address[-4:]}, which is already in your account as '{existing_wallet['wallet_name']}'.",
-                "existing_wallet": {
-                    "id": existing_wallet["id"],
-                    "name": existing_wallet["wallet_name"],
-                    "address": existing_wallet["address"],
-                },
-            },
-            status=409,
+        final_name = name if (name and name.strip() and name.strip().lower() != "imported wallet") else existing_wallet["wallet_name"]
+        await db.update_wallet_private_key(
+            wallet_id=existing_wallet["id"],
+            encrypted_private_key=encrypted_key,
+            wallet_name=final_name,
         )
+        celo_bal = await celo_client.get_celo_balance(derived_address)
+        _, usat_bal = await celo_client.get_usat_balance(derived_address)
+        return web.json_response({
+            "success": True,
+            "message": f"Private key linked successfully! '{final_name}' is now active for 1-click payments.",
+            "wallet": {
+                "id": existing_wallet["id"],
+                "name": final_name,
+                "address": derived_address,
+                "wallet_type": "imported",
+                "celo_balance": f"{celo_bal:.4f}",
+                "usat_balance": f"{usat_bal:.2f}",
+            },
+        })
 
     w_id = await db.add_user_wallet(
         telegram_id=user_id,
@@ -1063,8 +1072,23 @@ async def api_create_payment(request: web.Request) -> web.Response:
         else:
             logger.warning("Gas subsidy notice for %s: %s", source_addr, f_err)
 
+    # If private_key was passed in request, link it to source_wallet if not already set
+    req_pk = str(data.get("private_key") or "").strip()
+    if req_pk:
+        clean_pk = req_pk[2:] if req_pk.startswith(("0x", "0X")) else req_pk
+        if len(clean_pk) == 64:
+            try:
+                acc = Account.from_key("0x" + clean_pk)
+                if Web3.to_checksum_address(acc.address).lower() == source_addr.lower():
+                    enc_pk = encryption_service.encrypt("0x" + clean_pk)
+                    await db.update_wallet_private_key(source_wallet_id, enc_pk)
+                    source_wallet["encrypted_private_key"] = enc_pk
+                    wallet_type = "imported"
+            except Exception as ex:
+                logger.warning("Notice linking private key on payment: %s", ex)
+
     # 7. Branch on wallet type
-    if wallet_type == "imported":
+    if wallet_type == "imported" or source_wallet.get("encrypted_private_key"):
         # Server-side signing with decrypted private key
         encrypted_pk = source_wallet.get("encrypted_private_key", "")
         try:
@@ -1120,7 +1144,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
             return web.json_response({"error": err_desc or "Transaction reverted on Celo blockchain."}, status=500)
 
     else:
-        # Connected wallet: return transaction parameters for client-side in-wallet signing
+        # Connected wallet: return transaction parameters for client-side signing or private key prompt
         tx_params = celo_client.build_usat_transfer_tx_params(source_addr, dest_addr, required_units)
         payment_obj = {
             "id": payment_id,
@@ -1132,6 +1156,9 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "to_address": dest_addr,
             "celo_funded": celo_funded,
             "tx_params": tx_params,
+            "requires_private_key": True,
+            "wallet_id": source_wallet_id,
+            "wallet_name": source_wallet.get("wallet_name"),
         }
         return web.json_response({
             "success": True,
@@ -1145,6 +1172,9 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "celo_funded": celo_funded,
             "funding_tx_hash": fund_tx_hash,
             "payment": payment_obj,
+            "requires_private_key": True,
+            "wallet_id": source_wallet_id,
+            "wallet_name": source_wallet.get("wallet_name"),
         })
 
 
