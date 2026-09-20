@@ -251,10 +251,37 @@
                 </div>
               </div>
 
-              <!-- Wallet Selector Dropdown -->
-              <select id="select-send-wallet" class="form-input" onchange="app.handleWalletSelected()" style="font-size:14px; font-weight:700; border-radius:12px; background:#ffffff;">
-                <option value="">-- Choose sending wallet --</option>
-              </select>
+              <!-- Custom Themed Wallet Selector (Website Theme, Address on top, Wallet Name & Gas below) -->
+              <div class="wallet-custom-select-container" id="custom-wallet-select-container">
+                <div class="wallet-custom-trigger" id="custom-wallet-trigger" onclick="app.toggleWalletDropdownCustom(event)">
+                  <div class="wallet-trigger-content">
+                    <div class="wallet-trigger-top">
+                      <span class="wallet-trigger-address" id="trigger-wallet-address">Choose sending wallet</span>
+                      <span class="badge badge-green" id="trigger-wallet-badge" style="display:none; font-size:9px; padding:1px 5px;">Imported</span>
+                    </div>
+                    <div class="wallet-trigger-bottom" id="trigger-wallet-subtext">
+                      <span class="wallet-trigger-name" id="trigger-wallet-name">Click to select wallet</span>
+                      <span class="wallet-trigger-gas" id="trigger-wallet-gas" style="display:none;">
+                        <i data-lucide="fuel" class="icon-xs"></i>
+                        <span id="trigger-wallet-gas-text">0.00 CELO Gas</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="wallet-trigger-chevron">
+                    <i data-lucide="chevron-down" class="icon-sm"></i>
+                  </div>
+                </div>
+
+                <!-- Floating Custom Themed Dropdown Menu -->
+                <div class="wallet-custom-dropdown" id="custom-wallet-dropdown">
+                  <!-- Populated dynamically with website theme -->
+                </div>
+
+                <!-- Hidden native select for form state synchronization -->
+                <select id="select-send-wallet" style="display:none;" onchange="app.handleWalletSelected()">
+                  <option value="">-- Choose sending wallet --</option>
+                </select>
+              </div>
 
               <!-- Selected Wallet Gas & Detail Strip -->
               <div id="dash-wallet-summary-box" style="display:none; margin-top:8px; padding:6px 10px; background:#ffffff; border:1px solid var(--border-color); border-radius:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
@@ -471,11 +498,12 @@
                     <th>Transaction</th>
                     <th>Gas Subsidized</th>
                     <th>Date & Time</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="payments-table-body">
                   <tr>
-                    <td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">
+                    <td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">
                       Loading payments...
                     </td>
                   </tr>

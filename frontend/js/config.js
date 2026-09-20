@@ -16,17 +16,21 @@
 
   const storedUrl = typeof localStorage !== 'undefined' ? (localStorage.getItem('api_base_url') || '') : '';
   
+  const defaultProductionBackend = 'https://celofaucet.onrender.com';
   let targetUrl = '';
   if (isLocal) {
-    // When running locally, always use same-origin local backend unless explicitly pointing to another local port
-    if (storedUrl && (storedUrl.includes('localhost') || storedUrl.includes('127.0.0.1'))) {
+    if (storedUrl) {
       targetUrl = storedUrl;
-    } else {
+    } else if (window.location.port === '8080') {
+      // Running directly on the Python backend server
       targetUrl = '';
+    } else {
+      // Local dev servers (Live Server 5500, 3000, etc.) connect to the live backend
+      targetUrl = window.VITE_API_URL || window.API_BASE_URL || defaultProductionBackend;
     }
   } else {
-    // When running on Firebase Hosting or external domain
-    targetUrl = window.VITE_API_URL || window.API_BASE_URL || storedUrl || 'https://celofaucet.onrender.com';
+    // Firebase Hosting or external domain
+    targetUrl = window.VITE_API_URL || window.API_BASE_URL || storedUrl || defaultProductionBackend;
   }
 
   window.API_BASE_URL = (targetUrl || '').replace(/\/$/, '');

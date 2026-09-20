@@ -1691,3 +1691,258 @@ i[data-lucide], svg.lucide {
   font-size: 11px;
 }
 
+/* =========================================================
+   AUTH SCREEN TASKBAR HIDING (Login & Create Account)
+   ========================================================= */
+body.in-auth-mode .desktop-sidebar,
+body.in-auth-mode .top-navbar,
+body.in-auth-mode .mobile-bottom-nav,
+body.in-auth-mode #main-desktop-sidebar {
+  display: none !important;
+}
+
+body.in-auth-mode .app-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  background: var(--bg-subtle);
+}
+
+body.in-auth-mode .main-content {
+  padding-bottom: 0 !important;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.in-auth-mode .container {
+  padding: 16px;
+  width: 100%;
+}
+
+/* =========================================================
+   PREMIUM CUSTOM THEMED WALLET SELECTOR
+   ========================================================= */
+.wallet-custom-select-container {
+  position: relative;
+  width: 100%;
+  user-select: none;
+}
+
+.wallet-custom-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-sm);
+}
+
+.wallet-custom-trigger:hover {
+  border-color: var(--celo-green);
+  box-shadow: 0 4px 12px rgba(53, 208, 127, 0.12);
+  background: #fafdfb;
+}
+
+.wallet-custom-trigger.is-open {
+  border-color: var(--celo-green);
+  box-shadow: 0 0 0 3px rgba(53, 208, 127, 0.2);
+}
+
+.wallet-trigger-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wallet-trigger-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+.wallet-trigger-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.wallet-trigger-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.wallet-trigger-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wallet-trigger-gas {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--celo-green-dark);
+  font-weight: 600;
+  background: rgba(53, 208, 127, 0.1);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.wallet-trigger-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  margin-left: 10px;
+}
+
+.wallet-custom-trigger.is-open .wallet-trigger-chevron {
+  transform: rotate(180deg);
+  color: var(--celo-green);
+}
+
+/* Custom Dropdown Menu */
+.wallet-custom-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1.5px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.05);
+  max-height: 290px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 6px;
+  display: none;
+  animation: dropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wallet-custom-dropdown.is-open {
+  display: block;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wallet-option-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  margin-bottom: 3px;
+}
+
+.wallet-option-item:last-child {
+  margin-bottom: 0;
+}
+
+.wallet-option-item:hover {
+  background: rgba(53, 208, 127, 0.08);
+  border-color: rgba(53, 208, 127, 0.2);
+}
+
+.wallet-option-item.selected {
+  background: rgba(53, 208, 127, 0.12);
+  border-color: var(--celo-green);
+}
+
+.wallet-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wallet-option-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.wallet-option-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.wallet-option-balance {
+  font-weight: 700;
+  color: var(--celo-green-dark);
+}
+
+.wallet-option-check {
+  color: var(--celo-green);
+  display: none;
+  margin-left: 8px;
+}
+
+.wallet-option-item.selected .wallet-option-check {
+  display: inline-flex;
+}
+
+/* =========================================================
+   CANCEL TRANSACTION BUTTONS
+   ========================================================= */
+.btn-cancel-tx {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-cancel-tx:hover {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+

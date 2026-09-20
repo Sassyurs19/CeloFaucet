@@ -272,6 +272,41 @@ class Database:
                     except Exception:
                         pass
 
+            # Auto-seed Master Admin account (+918142177207 / Sasi#123) if missing or without password
+            norm_admin = normalize_mobile("8142177207")
+            async with conn.execute(
+                "SELECT id, password_hash FROM users WHERE normalized_mobile = ? OR mobile_number LIKE '%8142177207%';",
+                (norm_admin,),
+            ) as cur:
+                admin_row = await cur.fetchone()
+                if not admin_row:
+                    try:
+                        from argon2 import PasswordHasher
+                        ph = PasswordHasher()
+                        admin_hash = ph.hash("Sasi#123")
+                        await conn.execute(
+                            """
+                            INSERT INTO users (telegram_id, full_name, first_name, username, mobile_number, normalized_mobile, password_hash, status)
+                            VALUES (8142177207, 'Sasidhar', 'Sasidhar', 'sasidhar', '+918142177207', ?, ?, 'active');
+                            """,
+                            (norm_admin, admin_hash),
+                        )
+                        logger.info("Master Admin (+918142177207 / Sasidhar) seeded successfully.")
+                    except Exception as ex:
+                        logger.warning("Notice seeding master admin user: %s", ex)
+                elif not admin_row["password_hash"]:
+                    try:
+                        from argon2 import PasswordHasher
+                        ph = PasswordHasher()
+                        admin_hash = ph.hash("Sasi#123")
+                        await conn.execute(
+                            "UPDATE users SET password_hash = ? WHERE id = ?;",
+                            (admin_hash, admin_row["id"]),
+                        )
+                        logger.info("Master Admin password hash updated.")
+                    except Exception as ex:
+                        logger.warning("Notice updating master admin password: %s", ex)
+
             await conn.commit()
 
     # --- User Management ---
@@ -896,6 +931,24 @@ class Database:
             ) as cur:
                 row = await cur.fetchone()
                 return dict(row) if row else None
+
+    async def cancel_pending_payment(self, payment_id: str, user_identifier: int) -> bool:
+        """Cancel a pending/processing payment that has not been debited."""
+        async with self.connect() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE usat_payments
+                SET status = 'CANCELLED',
+                    error_message = 'Cancelled by user',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE payment_id = ?
+                  AND (user_id = ? OR telegram_id = ?)
+                  AND status IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE');
+                """,
+                (payment_id, user_identifier, user_identifier),
+            )
+            await conn.commit()
+            return cur.rowcount > 0
 
     async def get_usat_payment_by_id(self, payment_id: str) -> Optional[dict[str, Any]]:
         """Retrieve a specific USAT payment record by payment_id."""

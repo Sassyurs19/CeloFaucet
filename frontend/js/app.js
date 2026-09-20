@@ -132,17 +132,14 @@ const app = (function () {
   }
 
   function handleStandaloneFallback(endpoint, options = {}) {
+    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
+    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
     const isLocal = typeof window !== 'undefined' && (
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname === '0.0.0.0'
     );
-    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || (!isLocal ? storedBaseUrl : '') || '').replace(/\/$/, '');
-    if (isLocal && (baseUrl.includes('onrender.com') || baseUrl.includes('web.app'))) {
-      baseUrl = '';
-    }
-    if (baseUrl) {
+    if (baseUrl && !isLocal) {
       throw new Error(`Production request failed for ${endpoint}`);
     }
     const method = (options.method || 'GET').toUpperCase();
@@ -311,17 +308,40 @@ const app = (function () {
       return { wallets: wallets };
     }
 
-    // 8. Payments Create & Confirm
+    // 8. Payments Create, Confirm & Cancel
+    if (endpoint.includes('/payments/') && endpoint.endsWith('/cancel')) {
+      const parts = endpoint.split('/');
+      const pid = parts[parts.length - 2];
+      const payments = getLocalStore('standalone_payments', []);
+      const p = payments.find(item => item.payment_id === pid || String(item.id) === pid);
+      if (p) {
+        if ((p.status === 'SUCCESS' || p.status === 'CONFIRMED') && p.tx_hash) {
+          throw new Error('Transaction was already debited on Celo blockchain. Cannot cancel.');
+        }
+        p.status = 'CANCELLED';
+        p.error_message = 'Cancelled by user';
+        setLocalStore('standalone_payments', payments);
+        return { success: true, message: 'Pending transaction cancelled successfully.', status: 'CANCELLED' };
+      }
+      throw new Error('Payment not found.');
+    }
+
     if (endpoint.startsWith('/api/payments/create')) {
       const pid = 'pay_' + Date.now();
+      const sWallets = getLocalStore('standalone_wallets', []);
+      const srcW = sWallets.find(w => w.id === body.source_wallet_id || w.id === body.wallet_id || w.address === body.source_address);
+      const isImported = (srcW?.wallet_type || '').toLowerCase() === 'imported' || (body.wallet_type || '').toLowerCase() === 'imported';
+      const mockTx = '0x' + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join('');
       const p = {
         payment_id: pid,
-        amount: 2.00,
-        status: 'PENDING',
-        from_address: body.from_address || '',
-        to_address: body.to_address || '',
+        amount: parseFloat(body.amount || 2.00),
+        status: isImported ? 'SUCCESS' : 'PENDING',
+        from_address: body.from_address || body.source_address || (srcW ? srcW.address : ''),
+        to_address: body.to_address || body.recipient_address || '',
+        tx_hash: isImported ? mockTx : null,
         created_at: new Date().toISOString(),
-        execution_mode: 'WALLET_CONNECT',
+        execution_mode: isImported ? 'SERVER_SIGN' : 'WALLET_CONNECT',
+        wallet_type: isImported ? 'imported' : 'connected',
       };
       const payments = getLocalStore('standalone_payments', []);
       payments.unshift(p);
@@ -329,12 +349,15 @@ const app = (function () {
       return {
         success: true,
         payment_id: pid,
-        amount: 2.00,
+        status: isImported ? 'CONFIRMED' : 'AWAITING_USER_SIGNATURE',
+        tx_hash: isImported ? mockTx : undefined,
+        payment: p,
+        amount: p.amount,
         currency: 'USAT',
         network: 'Celo Mainnet',
-        from: body.from_address,
-        to: body.to_address,
-        execution_mode: 'WALLET_CONNECT',
+        from: p.from_address,
+        to: p.to_address,
+        wallet_type: isImported ? 'imported' : 'connected',
       };
     }
 
@@ -419,16 +442,8 @@ const app = (function () {
       headers['X-Admin-Token'] = state.adminToken;
     }
 
-    const isLocal = typeof window !== 'undefined' && (
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname === '0.0.0.0'
-    );
     const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || (!isLocal ? storedBaseUrl : '') || '').replace(/\/$/, '');
-    if (isLocal && (baseUrl.includes('onrender.com') || baseUrl.includes('web.app'))) {
-      baseUrl = '';
-    }
+    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
     const url = (baseUrl && endpoint.startsWith('/')) ? `${baseUrl}${endpoint}` : endpoint;
     
     let resp = null;
@@ -484,6 +499,11 @@ const app = (function () {
   }
 
   function navigateTo(viewId) {
+    if (viewId === 'auth') {
+      showAuthView();
+      return;
+    }
+
     // Admin gate check
     if (viewId === 'admin') {
       const isEligible = Boolean(state.user && state.user.is_admin_eligible);
@@ -495,10 +515,13 @@ const app = (function () {
 
     state.currentView = viewId;
 
-    if (!state.sessionToken && viewId !== 'auth' && viewId !== 'admin') {
+    if (!state.sessionToken && viewId !== 'admin') {
       showAuthView();
       return;
     }
+
+    // Ensure taskbars appear when logged into the dashboard/app
+    document.body.classList.remove('in-auth-mode');
 
     // Hide all views
     document.querySelectorAll('.view-section').forEach((v) => {
@@ -538,6 +561,8 @@ const app = (function () {
   }
 
   function showAuthView() {
+    // Completely hide taskbars on login and register pages
+    document.body.classList.add('in-auth-mode');
     document.querySelectorAll('.view-section').forEach((v) => (v.style.display = 'none'));
     const authView = document.getElementById('view-auth');
     if (authView) authView.style.display = 'block';
@@ -692,25 +717,38 @@ const app = (function () {
           body: JSON.stringify({ mobile, password }),
         });
       } catch (loginErr) {
-        // Auto-heal: If server was redeployed and database is fresh, check if this device was previously registered
+        // Auto-heal: Ensure accounts used in localhost or previous instances automatically sync to the backend
         const savedAccRaw = localStorage.getItem('celo_saved_account');
+        const standaloneUsers = getLocalStore('standalone_users', []);
+        const matchedLocalUser = standaloneUsers.find(u => (u.mobile || '').includes(mobile.slice(-10)));
+        let candidateName = 'User';
+
         if (savedAccRaw) {
           try {
             const savedAcc = JSON.parse(savedAccRaw);
-            if (savedAcc.mobile === mobile) {
-              console.log('Account re-syncing on newly booted server instance...');
-              const autoReg = await apiRequest('/api/auth/register', {
-                method: 'POST',
-                body: JSON.stringify({
-                  name: savedAcc.name || 'User',
-                  mobile,
-                  password,
-                  confirm_password: password,
-                }),
-              });
-              if (autoReg && autoReg.token && autoReg.user) {
-                data = autoReg;
-              }
+            if (savedAcc.mobile === mobile || (savedAcc.mobile && savedAcc.mobile.includes(mobile.slice(-10)))) {
+              candidateName = savedAcc.name || candidateName;
+            }
+          } catch (e) {}
+        }
+        if (matchedLocalUser) {
+          candidateName = matchedLocalUser.full_name || matchedLocalUser.name || candidateName;
+        }
+
+        if (password && password.length >= 6) {
+          try {
+            console.log('Account re-syncing to backend server...');
+            const autoReg = await apiRequest('/api/auth/register', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: candidateName,
+                mobile,
+                password,
+                confirm_password: password,
+              }),
+            });
+            if (autoReg && autoReg.token && autoReg.user) {
+              data = autoReg;
             }
           } catch (regErr) {
             console.warn('Auto-sync register fallback skipped:', regErr);
@@ -952,6 +990,13 @@ const app = (function () {
         }
       }
 
+      // Alphabetical sorting of wallets by user-assigned name
+      wallets.sort((a, b) => {
+        const nameA = (a.name || a.label || '').trim().toLowerCase();
+        const nameB = (b.name || b.label || '').trim().toLowerCase();
+        return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
       state.wallets = wallets;
       if (wallets.length > 0) {
         saveWalletsToDeviceVault(wallets);
@@ -981,39 +1026,125 @@ const app = (function () {
     }
   }
 
+  function toggleWalletDropdownCustom(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('custom-wallet-dropdown');
+    const trigger = document.getElementById('custom-wallet-trigger');
+    if (!dropdown || !trigger) return;
+    const isOpen = dropdown.classList.contains('is-open');
+    if (isOpen) {
+      dropdown.classList.remove('is-open');
+      trigger.classList.remove('is-open');
+    } else {
+      dropdown.classList.add('is-open');
+      trigger.classList.add('is-open');
+    }
+  }
+
+  function closeCustomWalletDropdown() {
+    const dropdown = document.getElementById('custom-wallet-dropdown');
+    const trigger = document.getElementById('custom-wallet-trigger');
+    if (dropdown) dropdown.classList.remove('is-open');
+    if (trigger) trigger.classList.remove('is-open');
+  }
+
+  function selectCustomWallet(walletId) {
+    const select = document.getElementById('select-send-wallet');
+    if (select) {
+      select.value = walletId;
+    }
+    state.selectedWalletId = walletId;
+    handleWalletSelected();
+    closeCustomWalletDropdown();
+  }
+
   function renderWalletsSelect() {
     const select = document.getElementById('select-send-wallet');
     const addWalletBtn = document.getElementById('btn-dash-add-wallet');
+    const customDropdown = document.getElementById('custom-wallet-dropdown');
 
     // Hide "+ Add Wallet" button on dashboard if user already has wallets
     if (addWalletBtn) {
       addWalletBtn.style.display = state.wallets.length === 0 ? 'inline-flex' : 'none';
     }
 
-    if (!select) return;
-
-    select.innerHTML = '';
-    if (state.wallets.length === 0) {
-      select.innerHTML = '<option value="">-- No wallet added yet. Click + Add Wallet --</option>';
-      handleWalletSelected();
-      return;
-    }
-
-    state.wallets.forEach((w) => {
-      const opt = document.createElement('option');
-      opt.value = w.id;
-      const name = w.name || w.label || 'My Wallet';
-      const shortAddr = formatShortAddress(w.address);
-      const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
-      opt.textContent = `${name} (${shortAddr}) — Available: $${usdt}`;
-      select.appendChild(opt);
+    // Sort wallets alphabetically by name
+    state.wallets.sort((a, b) => {
+      const nameA = (a.name || a.label || '').trim().toLowerCase();
+      const nameB = (b.name || b.label || '').trim().toLowerCase();
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
+    if (select) {
+      select.innerHTML = '';
+      if (state.wallets.length === 0) {
+        select.innerHTML = '<option value="">-- No wallet added yet. Click + Add Wallet --</option>';
+      } else {
+        state.wallets.forEach((w) => {
+          const opt = document.createElement('option');
+          opt.value = w.id;
+          const name = w.name || w.label || 'My Wallet';
+          const shortAddr = formatShortAddress(w.address);
+          const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
+          opt.textContent = `${name} (${shortAddr}) — Available: $${usdt}`;
+          select.appendChild(opt);
+        });
+      }
+    }
+
     if (state.selectedWalletId && state.wallets.some((w) => w.id === state.selectedWalletId)) {
-      select.value = state.selectedWalletId;
+      if (select) select.value = state.selectedWalletId;
     } else if (state.wallets.length > 0) {
-      select.value = state.wallets[0].id;
       state.selectedWalletId = state.wallets[0].id;
+      if (select) select.value = state.wallets[0].id;
+    } else {
+      state.selectedWalletId = null;
+    }
+
+    // Populate custom website-themed dropdown menu
+    if (customDropdown) {
+      if (state.wallets.length === 0) {
+        customDropdown.innerHTML = `
+          <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:12px;">
+            No wallets found. Click "+ Add Wallet" to connect or import one.
+          </div>
+        `;
+      } else {
+        let optionsHtml = '';
+        state.wallets.forEach((w) => {
+          const isSelected = state.selectedWalletId === w.id;
+          const wType = (w.wallet_type || w.type || 'connected').toLowerCase();
+          const name = w.name || w.label || 'My Wallet';
+          const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
+          const celo = parseFloat(w.celo_balance || 0).toFixed(4);
+
+          optionsHtml += `
+            <div class="wallet-option-item ${isSelected ? 'selected' : ''}" onclick="app.selectCustomWallet(${w.id})">
+              <div class="wallet-option-info">
+                <div class="wallet-option-top">
+                  <span title="${w.address}">${formatShortAddress(w.address)}</span>
+                  <span class="badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}" style="font-size:9px; padding:1px 5px;">
+                    ${wType === 'connected' ? 'Connected' : 'Imported'}
+                  </span>
+                </div>
+                <div class="wallet-option-bottom">
+                  <span style="font-weight:600; color:var(--text-primary);">${escapeHtml(name)}</span>
+                  <span style="color:var(--text-muted);">•</span>
+                  <span style="color:var(--celo-green-dark); font-weight:600; display:inline-flex; align-items:center; gap:2px;">
+                    <i data-lucide="fuel" class="icon-xs"></i> ${celo} CELO Gas
+                  </span>
+                  <span style="color:var(--text-muted);">•</span>
+                  <span class="wallet-option-balance">$${usdt} USDT</span>
+                </div>
+              </div>
+              <div class="wallet-option-check">
+                <i data-lucide="check" class="icon-sm"></i>
+              </div>
+            </div>
+          `;
+        });
+        customDropdown.innerHTML = optionsHtml;
+      }
     }
 
     handleWalletSelected();
@@ -1027,7 +1158,14 @@ const app = (function () {
     const selectedAddrEl = document.getElementById('dash-selected-wallet-address');
     const selectedCeloEl = document.getElementById('dash-selected-wallet-celo');
 
-    const walletId = parseInt(select?.value, 10);
+    // Trigger box elements (Website theme: Top is address, below is wallet name & gas fee)
+    const triggerAddr = document.getElementById('trigger-wallet-address');
+    const triggerBadge = document.getElementById('trigger-wallet-badge');
+    const triggerName = document.getElementById('trigger-wallet-name');
+    const triggerGas = document.getElementById('trigger-wallet-gas');
+    const triggerGasText = document.getElementById('trigger-wallet-gas-text');
+
+    const walletId = state.selectedWalletId || parseInt(select?.value, 10);
     const wallet = state.wallets.find((w) => w.id === walletId);
 
     if (!wallet) {
@@ -1035,20 +1173,47 @@ const app = (function () {
       if (summaryBox) summaryBox.style.display = 'none';
       if (fromBalBadge) fromBalBadge.textContent = '$0.00 USDT';
       if (availUsdtEl) availUsdtEl.textContent = '0.00';
+      if (triggerAddr) triggerAddr.textContent = 'Choose sending wallet';
+      if (triggerBadge) triggerBadge.style.display = 'none';
+      if (triggerName) triggerName.textContent = 'Click to select wallet';
+      if (triggerGas) triggerGas.style.display = 'none';
+      renderIcons();
       return;
     }
 
     state.selectedWalletId = walletId;
+    if (select) select.value = walletId;
     if (summaryBox) summaryBox.style.display = 'flex';
 
     const usat = parseFloat(wallet.usat_balance || 0);
     const celo = parseFloat(wallet.celo_balance || 0);
     const shortAddr = formatShortAddress(wallet.address);
+    const wType = (wallet.wallet_type || wallet.type || 'connected').toLowerCase();
+    const wName = wallet.name || wallet.label || 'My Wallet';
 
     if (fromBalBadge) fromBalBadge.textContent = `$${usat.toFixed(2)} USDT`;
     if (availUsdtEl) availUsdtEl.textContent = usat.toFixed(2);
     if (selectedAddrEl) selectedAddrEl.textContent = shortAddr;
     if (selectedCeloEl) selectedCeloEl.textContent = `${celo.toFixed(4)} CELO`;
+
+    // Update Custom Trigger Display: Top displays address, below displays wallet name & gas fee
+    if (triggerAddr) triggerAddr.textContent = shortAddr;
+    if (triggerBadge) {
+      triggerBadge.style.display = 'inline-flex';
+      triggerBadge.className = `badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}`;
+      triggerBadge.textContent = wType === 'connected' ? 'Connected' : 'Imported';
+    }
+    if (triggerName) triggerName.textContent = wName;
+    if (triggerGas) {
+      triggerGas.style.display = 'inline-flex';
+      if (triggerGasText) triggerGasText.textContent = `${celo.toFixed(4)} CELO Gas`;
+    }
+
+    // Synchronize selected highlight in custom dropdown
+    document.querySelectorAll('.wallet-option-item').forEach((item) => {
+      const isMatch = item.getAttribute('onclick')?.includes(`selectCustomWallet(${walletId})`);
+      item.classList.toggle('selected', Boolean(isMatch));
+    });
 
     const fillFeeBtn = document.getElementById('btn-dash-fill-celo');
     if (fillFeeBtn) {
@@ -1272,7 +1437,18 @@ const app = (function () {
       }
 
       const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
-      if (wType === 'imported') {
+      const isServerBroadcast = (
+        wType === 'imported' ||
+        wType === 'imported_wallet' ||
+        Boolean(res.tx_hash) ||
+        Boolean(payment.tx_hash) ||
+        res.status === 'CONFIRMED' ||
+        res.status === 'SUCCESS' ||
+        payment.status === 'CONFIRMED' ||
+        payment.status === 'SUCCESS'
+      );
+
+      if (isServerBroadcast) {
         setPaymentStep(3, `Broadcasting ${amount.toFixed(2)} USDT on Celo Mainnet...`);
         await new Promise((r) => setTimeout(r, 1000));
 
@@ -1509,7 +1685,13 @@ const app = (function () {
     }
 
     let html = '';
-    state.wallets.forEach((w) => {
+    const sortedWallets = [...state.wallets].sort((a, b) => {
+      const nameA = (a.name || a.label || '').trim().toLowerCase();
+      const nameB = (b.name || b.label || '').trim().toLowerCase();
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    sortedWallets.forEach((w) => {
       const isConnected = w.wallet_type === 'connected';
       const badgeClass = isConnected ? 'badge-blue' : 'badge-green';
       const typeLabel = isConnected ? 'Connected' : 'Imported';
@@ -1867,7 +2049,7 @@ const app = (function () {
       if (payments.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" style="text-align:center; padding:32px; color:var(--text-muted);">
+            <td colspan="8" style="text-align:center; padding:32px; color:var(--text-muted);">
               No payment transactions recorded yet.
             </td>
           </tr>
@@ -1887,11 +2069,39 @@ const app = (function () {
 
       payments.forEach((p) => {
         const amtStr = parseFloat(p.amount || 0).toFixed(2);
+        const pStatus = (p.status || '').toUpperCase();
+        const hasTxHash = Boolean(p.tx_hash);
+        const isPending = (pStatus === 'PROCESSING' || pStatus === 'PENDING' || pStatus === 'AWAITING_USER_SIGNATURE');
+
         let statusBadge = '<span class="badge badge-warning">PROCESSING</span>';
-        if (p.status === 'SUCCESS' || p.status === 'CONFIRMED') {
+        let actionCol = '<span style="color:var(--text-muted);">-</span>';
+        let mobileCancelBtn = '';
+
+        if (pStatus === 'SUCCESS' || pStatus === 'CONFIRMED') {
           statusBadge = '<span class="badge badge-green">SUCCESS</span>';
-        } else if (p.status === 'FAILED') {
+        } else if (pStatus === 'CANCELLED') {
+          statusBadge = '<span class="badge" style="background:var(--bg-subtle); color:var(--text-muted); border:1px solid var(--border-color);">CANCELLED</span>';
+        } else if (pStatus === 'FAILED') {
           statusBadge = '<span class="badge badge-danger">FAILED</span>';
+        } else if (isPending) {
+          if (hasTxHash) {
+            statusBadge = '<span class="badge badge-warning" title="Transaction broadcasted on-chain">PROCESSING (Debited)</span>';
+          } else {
+            statusBadge = '<span class="badge badge-warning" title="Funds not yet debited">PENDING (Not Debited)</span>';
+            const payId = p.payment_id || p.id;
+            actionCol = `
+              <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel this pending transaction">
+                <i data-lucide="x-circle" class="icon-xs"></i>
+                <span>Cancel</span>
+              </button>
+            `;
+            mobileCancelBtn = `
+              <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
+                <i data-lucide="x-circle" class="icon-xs"></i>
+                <span>Cancel Pending Transaction</span>
+              </button>
+            `;
+          }
         }
 
         const txLink = p.tx_hash
@@ -1917,6 +2127,7 @@ const app = (function () {
             <td>${txLink}</td>
             <td>${gasFundedBadge}</td>
             <td style="font-size:12px; color:var(--text-muted);">${dateStr}</td>
+            <td>${actionCol}</td>
           </tr>
         `;
 
@@ -1947,6 +2158,7 @@ const app = (function () {
               <span class="pmc-label">Date:</span>
               <span style="font-size:11px; color:var(--text-muted);">${dateStr}</span>
             </div>
+            ${mobileCancelBtn}
             ${p.tx_hash ? `
             <div class="pmc-footer">
               <a href="${CELO_EXPLORER_BASE}${p.tx_hash}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none;">
@@ -1968,6 +2180,25 @@ const app = (function () {
       renderIcons();
     } catch (err) {
       showToast('Failed to load history: ' + err.message, 'error');
+    }
+  }
+
+  async function cancelPendingPayment(paymentId) {
+    if (!paymentId) return;
+    if (!confirm('Are you sure you want to cancel this pending transaction? This will allow you to make a new payment immediately.')) {
+      return;
+    }
+
+    try {
+      showToast('Cancelling pending transaction...', 'info');
+      const res = await apiRequest(`/api/payments/${paymentId}/cancel`, {
+        method: 'POST',
+      });
+      showToast(res.message || 'Transaction cancelled successfully.', 'success');
+      await loadPaymentsHistory();
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || 'Failed to cancel payment.', 'error');
     }
   }
 
@@ -2521,6 +2752,14 @@ const app = (function () {
     // Check existing session
     checkSession();
     renderIcons();
+
+    // Close custom wallet dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      const container = document.getElementById('custom-wallet-select-container');
+      if (container && !container.contains(e.target)) {
+        closeCustomWalletDropdown();
+      }
+    });
   }
 
   function configureApiUrl() {
@@ -2567,12 +2806,16 @@ const app = (function () {
     handleLogout,
     updateAdminVisibility,
     handleWalletSelected,
+    toggleWalletDropdownCustom,
+    closeCustomWalletDropdown,
+    selectCustomWallet,
     setMaxAmount,
     handleAmountChanged,
     handleRecipientChanged,
     openPaymentConfirmation,
     confirmAndExecutePayment,
     initiatePayment,
+    cancelPendingPayment,
     openAddWalletModal,
     showImportWalletForm,
     backToAddWalletChoice,

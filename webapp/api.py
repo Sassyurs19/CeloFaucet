@@ -589,6 +589,7 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     if raw_wallets:
         wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
         total_usdt = sum(w.pop("_usat_num", 0.0) for w in wallets_data)
+        wallets_data.sort(key=lambda w: (w.get("name") or "").lower())
     else:
         wallets_data = []
         total_usdt = 0.0
@@ -1230,6 +1231,68 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     })
 
 
+async def api_cancel_payment(request: web.Request) -> web.Response:
+    """Cancel a pending/processing payment if funds have not been debited."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    payment_id = request.match_info.get("payment_id", "").strip()
+    if not payment_id:
+        return web.json_response({"error": "Payment ID is required."}, status=400)
+
+    payment = await db.get_usat_payment_by_id(payment_id)
+    if not payment:
+        return web.json_response({"error": "Payment not found."}, status=404)
+
+    # Ownership check
+    p_user = payment.get("user_id") or payment.get("telegram_id")
+    if p_user != user_id:
+        return web.json_response({"error": "Unauthorized to cancel this payment."}, status=403)
+
+    # Check status
+    current_status = (payment.get("status") or "").upper()
+    if current_status in ("SUCCESS", "CONFIRMED"):
+        return web.json_response({
+            "error": "Payment has already completed successfully. Debited transactions cannot be cancelled."
+        }, status=400)
+
+    if current_status == "CANCELLED":
+        return web.json_response({
+            "success": True,
+            "message": "Payment has already been cancelled.",
+            "status": "CANCELLED",
+        })
+
+    # If tx_hash exists, check on-chain whether funds were debited
+    tx_hash = payment.get("tx_hash")
+    if tx_hash:
+        try:
+            receipt = await celo_client.get_transaction_receipt(tx_hash)
+            if receipt and receipt.get("status") == 1:
+                await db.update_usat_payment_status(payment_id, "SUCCESS", block_number=receipt.get("blockNumber"))
+                return web.json_response({
+                    "error": "Transaction was already debited and mined on Celo blockchain. Cannot cancel."
+                }, status=400)
+        except Exception as ex:
+            logger.warning("Could not verify on-chain receipt for tx %s: %s", tx_hash, ex)
+
+    # Proceed with cancellation
+    cancelled = await db.cancel_pending_payment(payment_id, user_id)
+    if cancelled:
+        logger.info("Payment %s cancelled by user %s", payment_id, user_id)
+        return web.json_response({
+            "success": True,
+            "message": "Pending transaction cancelled successfully. You can now initiate a new payment.",
+            "payment_id": payment_id,
+            "status": "CANCELLED",
+        })
+    else:
+        return web.json_response({
+            "error": "Payment could not be cancelled or is already finalized."
+        }, status=400)
+
+
 # =========================================================================
 # 4. PROFILE API
 # =========================================================================
@@ -1695,6 +1758,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/receiving-wallets", api_get_receiving_wallets)
     app.router.add_post("/api/payments/create", api_create_payment)
     app.router.add_post("/api/payments/confirm-hash", api_submit_payment_hash)
+    app.router.add_post("/api/payments/{payment_id}/cancel", api_cancel_payment)
     app.router.add_get("/api/payments", api_get_payments_history)
 
     # Profile
