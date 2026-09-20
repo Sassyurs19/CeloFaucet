@@ -810,6 +810,9 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
     target_addr = Web3.to_checksum_address(wallet["address"])
 
     if not wallet_manager.is_configured:
+        wallet_manager._initialize_account()
+
+    if not wallet_manager.is_configured:
         return web.json_response({"error": "CELO faucet funding wallet is not configured on server."}, status=503)
 
     funding_amt = float(config.celo_funding_amount or 0.05)
