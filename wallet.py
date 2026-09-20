@@ -6,6 +6,7 @@ Handles local account derivation, address formatting, and security checks.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
