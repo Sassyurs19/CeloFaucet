@@ -1245,6 +1245,7 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     for p in payments:
         formatted.append({
             "id": p["id"],
+            "payment_id": p.get("payment_id") or str(p["id"]),
             "amount": p.get("amount_usat", "2.00"),
             "from_address": p.get("from_address"),
             "to_address": p.get("to_address"),
@@ -1267,24 +1268,47 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
 async def api_cancel_payment(request: web.Request) -> web.Response:
     """Cancel a pending/processing payment if funds have not been debited."""
     user_id = get_user_id_from_request(request)
-    if not user_id:
+    is_admin = is_admin_request(request)
+    if not user_id and not is_admin:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     payment_id = request.match_info.get("payment_id", "").strip()
-    if not payment_id:
-        return web.json_response({"error": "Payment ID is required."}, status=400)
+    if not payment_id or payment_id in ("active", "current", "pending", "cancel-active"):
+        if not user_id:
+            return web.json_response({"error": "User ID required to cancel active payment."}, status=400)
+        cancelled_pid = await db.cancel_user_active_payment(user_id)
+        if cancelled_pid:
+            return web.json_response({
+                "success": True,
+                "message": "Pending transaction cancelled successfully. You can now initiate a new payment.",
+                "payment_id": cancelled_pid,
+                "status": "CANCELLED",
+            })
+        return web.json_response({"error": "No active pending payment found to cancel."}, status=404)
 
     payment = await db.get_usat_payment_by_id(payment_id)
     if not payment:
+        # Fallback: if user specified an ID that was not found, check if they have any active payment
+        if user_id:
+            cancelled_pid = await db.cancel_user_active_payment(user_id)
+            if cancelled_pid:
+                return web.json_response({
+                    "success": True,
+                    "message": "Pending transaction cancelled successfully. You can now initiate a new payment.",
+                    "payment_id": cancelled_pid,
+                    "status": "CANCELLED",
+                })
         return web.json_response({"error": "Payment not found."}, status=404)
 
     # Ownership check
-    p_user = payment.get("user_id") or payment.get("telegram_id")
-    if p_user != user_id:
-        return web.json_response({"error": "Unauthorized to cancel this payment."}, status=403)
+    if not is_admin:
+        user_ids = set(await db._resolve_user_identifiers(user_id)) if user_id else set()
+        payment_user_ids = {payment.get("user_id"), payment.get("telegram_id")} - {None}
+        if not user_ids.intersection(payment_user_ids):
+            return web.json_response({"error": "Unauthorized to cancel this payment."}, status=403)
 
     # Check status
-    current_status = (payment.get("status") or "").upper()
+    current_status = (payment.get("status") or "").upper().strip()
     if current_status in ("SUCCESS", "CONFIRMED"):
         return web.json_response({
             "error": "Payment has already completed successfully. Debited transactions cannot be cancelled."
@@ -1295,6 +1319,7 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
             "success": True,
             "message": "Payment has already been cancelled.",
             "status": "CANCELLED",
+            "payment_id": payment.get("payment_id") or str(payment.get("id")),
         })
 
     # If tx_hash exists, check on-chain whether funds were debited
@@ -1303,7 +1328,7 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
         try:
             receipt = await celo_client.get_transaction_receipt(tx_hash)
             if receipt and receipt.get("status") == 1:
-                await db.update_usat_payment_status(payment_id, "SUCCESS", block_number=receipt.get("blockNumber"))
+                await db.update_usat_payment_status(payment["payment_id"], "SUCCESS", block_number=receipt.get("blockNumber"))
                 return web.json_response({
                     "error": "Transaction was already debited and mined on Celo blockchain. Cannot cancel."
                 }, status=400)
@@ -1311,13 +1336,14 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
             logger.warning("Could not verify on-chain receipt for tx %s: %s", tx_hash, ex)
 
     # Proceed with cancellation
-    cancelled = await db.cancel_pending_payment(payment_id, user_id)
+    target_pid = payment.get("payment_id") or payment_id
+    cancelled = await db.cancel_pending_payment(target_pid, user_identifier=user_id, is_admin=is_admin)
     if cancelled:
-        logger.info("Payment %s cancelled by user %s", payment_id, user_id)
+        logger.info("Payment %s cancelled by user %s (admin=%s)", target_pid, user_id, is_admin)
         return web.json_response({
             "success": True,
             "message": "Pending transaction cancelled successfully. You can now initiate a new payment.",
-            "payment_id": payment_id,
+            "payment_id": target_pid,
             "status": "CANCELLED",
         })
     else:
@@ -1688,6 +1714,7 @@ async def api_admin_get_payments(request: web.Request) -> web.Response:
     for p in payments:
         formatted.append({
             "id": p["id"],
+            "payment_id": p.get("payment_id") or str(p["id"]),
             "user": p.get("full_name") or f"User {p.get('user_id') or p.get('telegram_id')}",
             "mobile": mask_mobile(p.get("mobile_number")),
             "mobile_raw": p.get("mobile_number", ""),
@@ -1791,6 +1818,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/receiving-wallets", api_get_receiving_wallets)
     app.router.add_post("/api/payments/create", api_create_payment)
     app.router.add_post("/api/payments/confirm-hash", api_submit_payment_hash)
+    app.router.add_post("/api/payments/cancel-active", api_cancel_payment)
     app.router.add_post("/api/payments/{payment_id}/cancel", api_cancel_payment)
     app.router.add_get("/api/payments", api_get_payments_history)
 

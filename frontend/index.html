@@ -1090,8 +1090,12 @@
         </div>
       </div>
 
-      <div style="margin-top:16px;">
-        <button type="button" class="btn btn-primary btn-lg" id="btn-pay-modal-action" onclick="app.closeModal('modal-payment-progress')" style="display:none;">
+      <div style="margin-top:16px; display:flex; flex-direction:column; gap:10px;">
+        <button type="button" class="btn btn-danger btn-lg" id="btn-pay-modal-cancel" onclick="app.cancelActiveFromModal()" style="display:none; width:100%; justify-content:center;">
+          <i data-lucide="x-circle" class="icon-sm"></i>
+          <span>Cancel Pending Transaction & Unlock</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-lg" id="btn-pay-modal-action" onclick="app.closeModal('modal-payment-progress')" style="display:none; width:100%; justify-content:center;">
           Done
         </button>
       </div>

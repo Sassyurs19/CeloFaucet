@@ -98,7 +98,18 @@ class TestCancelAndSort(AioHTTPTestCase):
         self.assertEqual(cancel_data["status"], "CANCELLED")
         print(f"[OK] Successfully cancelled payment: {cancel_data['message']}")
 
-        # 8. Verify user can now create a new payment immediately after cancellation
+        # 8. Verify payments history contains payment_id
+        hist_resp = await self.client.get("/api/payments", headers=headers)
+        self.assertEqual(hist_resp.status, 200)
+        hist_data = await hist_resp.json()
+        self.assertTrue(len(hist_data["payments"]) > 0)
+        first_hist = hist_data["payments"][0]
+        self.assertIn("payment_id", first_hist)
+        self.assertEqual(first_hist["status"], "CANCELLED")
+        numeric_row_id = first_hist["id"]
+        print(f"[OK] Payment history has payment_id and status CANCELLED. Row ID: {numeric_row_id}")
+
+        # 9. Verify user can now create a new payment immediately after cancellation
         new_p_resp = await self.client.post("/api/payments/create", headers=headers, json={
             "source_wallet_id": first_w["id"],
             "amount": 2.0,
@@ -107,10 +118,32 @@ class TestCancelAndSort(AioHTTPTestCase):
         self.assertEqual(new_p_resp.status, 200)
         new_p_data = await new_p_resp.json()
         self.assertTrue(new_p_data["success"])
-        print(f"[OK] New payment created successfully after cancellation: {new_p_data['payment_id']}")
+        new_pid = new_p_data["payment_id"]
+        print(f"[OK] New payment created successfully after cancellation: {new_pid}")
 
-        # 9. Clean up test payment and test wallets to keep DB clean
-        await self.client.post(f"/api/payments/{new_p_data['payment_id']}/cancel", headers=headers)
+        # 10. Test cancelling by numeric row ID (simulating frontend passing row ID)
+        hist_resp2 = await self.client.get("/api/payments", headers=headers)
+        new_row_id = (await hist_resp2.json())["payments"][0]["id"]
+        num_cancel_resp = await self.client.post(f"/api/payments/{new_row_id}/cancel", headers=headers)
+        self.assertEqual(num_cancel_resp.status, 200)
+        num_cancel_data = await num_cancel_resp.json()
+        self.assertTrue(num_cancel_data["success"])
+        print(f"[OK] Successfully cancelled payment using numeric row ID ({new_row_id}): {num_cancel_data['status']}")
+
+        # 11. Test /api/payments/cancel-active
+        p3_resp = await self.client.post("/api/payments/create", headers=headers, json={
+            "source_wallet_id": first_w["id"],
+            "amount": 2.0,
+            "recipient_address": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+        })
+        self.assertEqual(p3_resp.status, 200)
+        active_cancel_resp = await self.client.post("/api/payments/cancel-active", headers=headers)
+        self.assertEqual(active_cancel_resp.status, 200)
+        active_cancel_data = await active_cancel_resp.json()
+        self.assertTrue(active_cancel_data["success"])
+        print(f"[OK] Successfully cancelled active payment via /cancel-active: {active_cancel_data['payment_id']}")
+
+        # 12. Clean up test payment and test wallets to keep DB clean
         async with db.connect() as conn:
             await conn.execute("DELETE FROM user_wallets WHERE wallet_name IN ('Zebra Vault', 'Alpha Stash', 'Beta Reserve')")
             await conn.commit()

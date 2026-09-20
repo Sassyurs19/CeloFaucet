@@ -415,6 +415,15 @@ class Database:
                 row = await cur.fetchone()
                 return dict(row) if row else None
 
+    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[dict[str, Any]]:
+        """Retrieve user by telegram_id."""
+        async with self.connect() as conn:
+            async with conn.execute(
+                "SELECT * FROM users WHERE telegram_id = ?;", (telegram_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
     async def create_user_account(
         self,
         full_name: str,
@@ -983,47 +992,150 @@ class Database:
             )
             await conn.commit()
 
+    async def _resolve_user_identifiers(self, user_identifier: int) -> list[int]:
+        """Resolve all potential IDs (users.id, users.telegram_id) for a given identifier."""
+        try:
+            uid_int = int(user_identifier)
+        except (ValueError, TypeError):
+            return []
+
+        ids = {uid_int}
+        user = await self.get_user_by_id(uid_int)
+        if user and user.get("telegram_id"):
+            try:
+                ids.add(int(user["telegram_id"]))
+            except (ValueError, TypeError):
+                pass
+        user_tg = await self.get_user_by_telegram_id(uid_int)
+        if user_tg and user_tg.get("id"):
+            try:
+                ids.add(int(user_tg["id"]))
+            except (ValueError, TypeError):
+                pass
+        return list(ids)
+
     async def get_active_usat_payment(self, user_identifier: int) -> Optional[dict[str, Any]]:
         """Check for active PROCESSING payment to prevent concurrent races."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        if not user_ids:
+            return None
+        placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
+            # Auto-expire stale unmined payments older than 15 minutes to prevent permanent locks
+            await conn.execute(
+                f"""
+                UPDATE usat_payments
+                SET status = 'CANCELLED',
+                    error_message = 'Auto-expired due to inactivity',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
+                  AND tx_hash IS NULL
+                  AND created_at < datetime('now', '-15 minutes');
+                """,
+                user_ids + user_ids,
+            )
+            await conn.commit()
+
             async with conn.execute(
-                """
+                f"""
                 SELECT * FROM usat_payments 
-                WHERE (user_id = ? OR telegram_id = ?) AND status = 'PROCESSING'
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
                 ORDER BY created_at DESC LIMIT 1;
                 """,
-                (user_identifier, user_identifier),
+                user_ids + user_ids,
             ) as cur:
                 row = await cur.fetchone()
                 return dict(row) if row else None
 
-    async def cancel_pending_payment(self, payment_id: str, user_identifier: int) -> bool:
+    async def cancel_pending_payment(
+        self,
+        payment_id: str | int,
+        user_identifier: int | None = None,
+        is_admin: bool = False
+    ) -> bool:
         """Cancel a pending/processing payment that has not been debited."""
+        pid_str = str(payment_id).strip()
+        user_ids = []
+        if user_identifier is not None and not is_admin:
+            user_ids = await self._resolve_user_identifiers(user_identifier)
+
         async with self.connect() as conn:
-            cur = await conn.execute(
+            if is_admin or not user_ids:
+                cur = await conn.execute(
+                    """
+                    UPDATE usat_payments
+                    SET status = 'CANCELLED',
+                        error_message = 'Cancelled by user',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE (payment_id = ? OR CAST(id AS TEXT) = ?)
+                      AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED');
+                    """,
+                    (pid_str, pid_str),
+                )
+            else:
+                placeholders = ",".join("?" * len(user_ids))
+                cur = await conn.execute(
+                    f"""
+                    UPDATE usat_payments
+                    SET status = 'CANCELLED',
+                        error_message = 'Cancelled by user',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE (payment_id = ? OR CAST(id AS TEXT) = ?)
+                      AND (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                      AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED');
+                    """,
+                    [pid_str, pid_str] + user_ids + user_ids,
+                )
+            await conn.commit()
+            return cur.rowcount > 0
+
+    async def cancel_user_active_payment(self, user_identifier: int) -> Optional[str]:
+        """Cancel whatever active/processing/pending payment the user currently has. Returns cancelled payment_id if found."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        if not user_ids:
+            return None
+        placeholders = ",".join("?" * len(user_ids))
+        async with self.connect() as conn:
+            async with conn.execute(
+                f"""
+                SELECT payment_id, id FROM usat_payments
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
+                  AND tx_hash IS NULL
+                ORDER BY created_at DESC LIMIT 1;
+                """,
+                user_ids + user_ids,
+            ) as cur:
+                row = await cur.fetchone()
+                if not row:
+                    return None
+                pid = row["payment_id"]
+
+            await conn.execute(
                 """
                 UPDATE usat_payments
                 SET status = 'CANCELLED',
                     error_message = 'Cancelled by user',
                     updated_at = CURRENT_TIMESTAMP
-                WHERE payment_id = ?
-                  AND (user_id = ? OR telegram_id = ?)
-                  AND status IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE');
+                WHERE payment_id = ?;
                 """,
-                (payment_id, user_identifier, user_identifier),
+                (pid,),
             )
             await conn.commit()
-            return cur.rowcount > 0
+            return pid
 
-    async def get_usat_payment_by_id(self, payment_id: str) -> Optional[dict[str, Any]]:
-        """Retrieve a specific USAT payment record by payment_id."""
+    async def get_usat_payment_by_id(self, payment_id: str | int) -> Optional[dict[str, Any]]:
+        """Retrieve a specific USAT payment record by payment_id (UUID) or numeric id."""
         async with self.connect() as conn:
+            pid_str = str(payment_id).strip()
             async with conn.execute(
                 """
                 SELECT * FROM usat_payments 
-                WHERE payment_id = ?;
+                WHERE payment_id = ? OR CAST(id AS TEXT) = ?;
                 """,
-                (payment_id,),
+                (pid_str, pid_str),
             ) as cur:
                 row = await cur.fetchone()
                 return dict(row) if row else None
@@ -1032,24 +1144,29 @@ class Database:
         self, user_identifier: int, limit: int = 5, offset: int = 0
     ) -> list[dict[str, Any]]:
         """Paginated USAT payments for a specific user."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
             async with conn.execute(
-                """
+                f"""
                 SELECT * FROM usat_payments
-                WHERE user_id = ? OR telegram_id = ?
+                WHERE user_id IN ({placeholders}) OR telegram_id IN ({placeholders})
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?;
                 """,
-                (user_identifier, user_identifier, limit, offset),
+                user_ids + user_ids + [limit, offset],
             ) as cur:
                 rows = await cur.fetchall()
                 return [dict(r) for r in rows]
 
     async def get_user_payments_count(self, user_identifier: int) -> int:
         """Return total USAT payments made by user."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
             async with conn.execute(
-                "SELECT COUNT(*) AS cnt FROM usat_payments WHERE user_id = ? OR telegram_id = ?;", (user_identifier, user_identifier)
+                f"SELECT COUNT(*) AS cnt FROM usat_payments WHERE user_id IN ({placeholders}) OR telegram_id IN ({placeholders});",
+                user_ids + user_ids,
             ) as cur:
                 row = await cur.fetchone()
                 return row["cnt"] if row else 0

@@ -309,11 +309,19 @@ const app = (function () {
     }
 
     // 8. Payments Create, Confirm & Cancel
-    if (endpoint.includes('/payments/') && endpoint.endsWith('/cancel')) {
+    if ((endpoint.includes('/payments/') && endpoint.endsWith('/cancel')) || endpoint === '/api/payments/cancel-active') {
       const parts = endpoint.split('/');
-      const pid = parts[parts.length - 2];
+      const pid = endpoint === '/api/payments/cancel-active' ? 'active' : parts[parts.length - 2];
       const payments = getLocalStore('standalone_payments', []);
-      const p = payments.find(item => item.payment_id === pid || String(item.id) === pid);
+      let p = null;
+      if (pid === 'active' || pid === 'current' || pid === 'pending' || pid === 'cancel-active') {
+        p = payments.find(item => item.status === 'PROCESSING' || item.status === 'PENDING' || item.status === 'AWAITING_USER_SIGNATURE');
+      } else {
+        p = payments.find(item => item.payment_id === pid || String(item.id) === pid);
+        if (!p) {
+          p = payments.find(item => item.status === 'PROCESSING' || item.status === 'PENDING');
+        }
+      }
       if (p) {
         if ((p.status === 'SUCCESS' || p.status === 'CONFIRMED') && p.tx_hash) {
           throw new Error('Transaction was already debited on Celo blockchain. Cannot cancel.');
@@ -321,9 +329,9 @@ const app = (function () {
         p.status = 'CANCELLED';
         p.error_message = 'Cancelled by user';
         setLocalStore('standalone_payments', payments);
-        return { success: true, message: 'Pending transaction cancelled successfully.', status: 'CANCELLED' };
+        return { success: true, message: 'Pending transaction cancelled successfully.', status: 'CANCELLED', payment_id: p.payment_id || p.id };
       }
-      throw new Error('Payment not found.');
+      return { success: true, message: 'No pending transaction found or already cancelled.', status: 'CANCELLED' };
     }
 
     if (endpoint.startsWith('/api/payments/create')) {
@@ -1518,6 +1526,10 @@ const app = (function () {
         }
       }
     } catch (err) {
+      if (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) {
+        const payId = state.activePayment.payment_id || state.activePayment.id;
+        apiRequest(`/api/payments/${payId}/cancel`, { method: 'POST' }).catch(() => {});
+      }
       setPaymentFailed(err.message || 'Payment failed.');
     } finally {
       state.isSubmitting = false;
@@ -1536,6 +1548,7 @@ const app = (function () {
     const stepInd = document.getElementById('pay-step-indicator');
     const receiptCard = document.getElementById('pay-receipt-card');
     const actionBtn = document.getElementById('btn-pay-modal-action');
+    const cancelBtn = document.getElementById('btn-pay-modal-cancel');
     const linkCont = document.getElementById('pay-tx-link-container');
     const closeBtn = document.getElementById('btn-close-pay-modal');
 
@@ -1544,6 +1557,7 @@ const app = (function () {
     if (stepInd) stepInd.style.display = 'flex';
     if (receiptCard) receiptCard.style.display = 'none';
     if (actionBtn) actionBtn.style.display = 'none';
+    if (cancelBtn) cancelBtn.style.display = 'none';
     if (linkCont) linkCont.style.display = 'none';
     if (closeBtn) closeBtn.style.display = 'none';
 
@@ -1685,6 +1699,7 @@ const app = (function () {
     const titleEl = document.getElementById('pay-progress-title');
     const descEl = document.getElementById('pay-progress-desc');
     const actionBtn = document.getElementById('btn-pay-modal-action');
+    const cancelBtn = document.getElementById('btn-pay-modal-cancel');
     const closeBtn = document.getElementById('btn-close-pay-modal');
 
     if (iconCont) {
@@ -1692,6 +1707,13 @@ const app = (function () {
     }
     if (titleEl) titleEl.textContent = 'Payment Failed';
     if (descEl) descEl.textContent = errorMsg;
+
+    if (cancelBtn) {
+      cancelBtn.style.display = 'inline-flex';
+      cancelBtn.onclick = async () => {
+        await cancelActiveFromModal();
+      };
+    }
 
     if (actionBtn) {
       actionBtn.style.display = 'block';
@@ -1702,6 +1724,34 @@ const app = (function () {
 
     renderIcons();
     showToast(`Payment error: ${errorMsg}`, 'error');
+  }
+
+  async function cancelActiveFromModal() {
+    const targetId = (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) || 'active';
+    try {
+      showToast('Cancelling pending transaction...', 'info');
+      const res = await apiRequest(`/api/payments/${targetId}/cancel`, {
+        method: 'POST',
+      });
+      showToast(res.message || 'Pending transaction cancelled successfully.', 'success');
+      state.activePayment = null;
+      closeModal('modal-payment-progress');
+      await loadWallets();
+      await loadPaymentsHistory();
+      await loadDashboardData();
+    } catch (err) {
+      try {
+        const res2 = await apiRequest('/api/payments/cancel-active', { method: 'POST' });
+        showToast(res2.message || 'Pending transaction cancelled successfully.', 'success');
+        state.activePayment = null;
+        closeModal('modal-payment-progress');
+        await loadWallets();
+        await loadPaymentsHistory();
+        await loadDashboardData();
+      } catch (err2) {
+        showToast(err.message || err2.message || 'Failed to cancel pending transaction.', 'error');
+      }
+    }
   }
 
   // --- Wallet Cards & 3-Dot Dropdown Actions ---
@@ -2110,24 +2160,22 @@ const app = (function () {
         } else if (pStatus === 'FAILED') {
           statusBadge = '<span class="badge badge-danger">FAILED</span>';
         } else if (isPending) {
-          if (hasTxHash) {
-            statusBadge = '<span class="badge badge-warning" title="Transaction broadcasted on-chain">PROCESSING (Debited)</span>';
-          } else {
-            statusBadge = '<span class="badge badge-warning" title="Funds not yet debited">PENDING (Not Debited)</span>';
-            const payId = p.payment_id || p.id;
-            actionCol = `
-              <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel this pending transaction">
-                <i data-lucide="x-circle" class="icon-xs"></i>
-                <span>Cancel</span>
-              </button>
-            `;
-            mobileCancelBtn = `
-              <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
-                <i data-lucide="x-circle" class="icon-xs"></i>
-                <span>Cancel Pending Transaction</span>
-              </button>
-            `;
-          }
+          const payId = p.payment_id || p.id;
+          statusBadge = hasTxHash
+            ? '<span class="badge badge-warning" title="Transaction broadcasted on-chain">PROCESSING</span>'
+            : '<span class="badge badge-warning" title="Pending execution">PENDING</span>';
+          actionCol = `
+            <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel this pending transaction">
+              <i data-lucide="x-circle" class="icon-xs"></i>
+              <span>Cancel</span>
+            </button>
+          `;
+          mobileCancelBtn = `
+            <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
+              <i data-lucide="x-circle" class="icon-xs"></i>
+              <span>Cancel Pending Transaction</span>
+            </button>
+          `;
         }
 
         const txLink = p.tx_hash
@@ -2210,21 +2258,32 @@ const app = (function () {
   }
 
   async function cancelPendingPayment(paymentId) {
-    if (!paymentId) return;
+    const targetId = paymentId || (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) || 'active';
     if (!confirm('Are you sure you want to cancel this pending transaction? This will allow you to make a new payment immediately.')) {
       return;
     }
 
     try {
       showToast('Cancelling pending transaction...', 'info');
-      const res = await apiRequest(`/api/payments/${paymentId}/cancel`, {
+      const res = await apiRequest(`/api/payments/${targetId}/cancel`, {
         method: 'POST',
       });
       showToast(res.message || 'Transaction cancelled successfully.', 'success');
+      state.activePayment = null;
       await loadPaymentsHistory();
       await loadDashboardData();
+      await loadWallets();
     } catch (err) {
-      showToast(err.message || 'Failed to cancel payment.', 'error');
+      try {
+        const res2 = await apiRequest('/api/payments/cancel-active', { method: 'POST' });
+        showToast(res2.message || 'Transaction cancelled successfully.', 'success');
+        state.activePayment = null;
+        await loadPaymentsHistory();
+        await loadDashboardData();
+        await loadWallets();
+      } catch (err2) {
+        showToast(err.message || 'Failed to cancel payment.', 'error');
+      }
     }
   }
 
@@ -2844,6 +2903,7 @@ const app = (function () {
     confirmAndExecutePayment,
     initiatePayment,
     cancelPendingPayment,
+    cancelActiveFromModal,
     openAddWalletModal,
     showImportWalletForm,
     backToAddWalletChoice,
