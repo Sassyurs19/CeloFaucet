@@ -1681,10 +1681,10 @@ const app = (function () {
             <i data-lucide="wallet" class="icon-lg" style="color:var(--text-muted);"></i>
           </div>
           <h3 style="font-size:18px;">No Wallets Added Yet</h3>
-          <p class="description" style="margin-top:4px;">Connect an in-browser wallet or import a private key to start making payments.</p>
+          <p class="description" style="margin-top:4px;">Import a Celo private key to start making payments.</p>
           <button class="btn btn-primary" onclick="app.openAddWalletModal()">
-            <i data-lucide="plus" class="icon-sm"></i>
-            <span>Add Your First Wallet</span>
+            <i data-lucide="key-round" class="icon-sm"></i>
+            <span>Import Your First Wallet</span>
           </button>
         </div>
       `;
@@ -1896,33 +1896,15 @@ const app = (function () {
 
   function openAddWalletModal() {
     const modal = document.getElementById('modal-add-wallet');
-    const stepChoice = document.getElementById('add-wallet-step-choice');
     const stepImport = document.getElementById('add-wallet-step-import');
 
     if (modal) modal.classList.add('active');
-    if (stepChoice) stepChoice.style.display = 'block';
-    if (stepImport) stepImport.style.display = 'none';
+    if (stepImport) stepImport.style.display = 'block';
 
     const pkInput = document.getElementById('import-private-key');
     const labelInput = document.getElementById('import-wallet-label');
     if (pkInput) pkInput.value = '';
     if (labelInput) labelInput.value = '';
-    renderIcons();
-  }
-
-  function showImportWalletForm() {
-    const stepChoice = document.getElementById('add-wallet-step-choice');
-    const stepImport = document.getElementById('add-wallet-step-import');
-    if (stepChoice) stepChoice.style.display = 'none';
-    if (stepImport) stepImport.style.display = 'block';
-    renderIcons();
-  }
-
-  function backToAddWalletChoice() {
-    const stepChoice = document.getElementById('add-wallet-step-choice');
-    const stepImport = document.getElementById('add-wallet-step-import');
-    if (stepChoice) stepChoice.style.display = 'block';
-    if (stepImport) stepImport.style.display = 'none';
     renderIcons();
   }
 
@@ -1976,7 +1958,7 @@ const app = (function () {
 
     const words = rawKey.split(/\s+/);
     if (words.length >= 12 || rawKey.includes(' ')) {
-      showToast('Recovery phrases are not supported. Please use Connect Wallet or a private key.', 'error');
+      showToast('Seed phrases are not supported. Please enter a valid 64-character private key.', 'error');
       return;
     }
 

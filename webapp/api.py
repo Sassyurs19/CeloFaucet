@@ -686,7 +686,7 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     words = raw_key.split()
     if len(words) >= 12 or " " in raw_key:
         return web.json_response({
-            "error": "Recovery phrases are not supported. Please use Connect Wallet or a private key."
+            "error": "Seed phrases / recovery phrases are not supported. Enter only a 64-character hex private key."
         }, status=400)
 
     clean_key = raw_key

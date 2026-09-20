@@ -868,65 +868,23 @@
 
 
   <!-- =========================================================
-       MODAL 1: ADD WALLET (Connect vs Import)
+       MODAL 1: IMPORT WALLET (Private Key Only)
        ========================================================= -->
   <div id="modal-add-wallet" class="modal-overlay">
     <div class="modal-card">
       <div class="modal-header">
         <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
-          <i data-lucide="plus-circle" class="icon-sm" style="color:var(--celo-green);"></i>
-          <span>Add Celo Wallet</span>
+          <i data-lucide="key-round" class="icon-sm" style="color:var(--accent-blue);"></i>
+          <span>Import Wallet</span>
         </h3>
         <button class="modal-close" onclick="app.closeModal('modal-add-wallet')">&times;</button>
       </div>
 
-      <!-- Step 1: Selection between Connect and Import -->
-      <div id="add-wallet-step-choice">
-        <p class="description">Choose how you want to add your Celo wallet.</p>
-        <div style="background:var(--celo-green-light); border:1px solid rgba(53,208,127,0.3); border-radius:var(--radius-md); padding:10px 12px; margin-bottom:14px; font-size:12px; color:var(--celo-green-dark); display:flex; align-items:center; gap:8px;">
-          <i data-lucide="sparkles" class="icon-sm"></i>
-          <span><strong>Unlimited Wallets Supported:</strong> You can add 20+ wallets to your account. To connect another account, select it in MetaMask/OKX or import a distinct private key below.</span>
-        </div>
+      <div id="add-wallet-step-import">
+        <p class="description">Enter your wallet name and 64-character Celo private key.</p>
 
-        <!-- Option A: Connect Wallet -->
-        <div class="card-surface" style="cursor:pointer; transition:all 0.15s ease;" onclick="app.handleConnectInBrowserWallet()">
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-            <i data-lucide="wallet" class="icon-lg" style="color:var(--celo-green);"></i>
-            <div>
-              <div style="font-weight:700; font-size:15px; color:var(--text-primary);">Connect Wallet</div>
-              <div style="font-size:12px; color:var(--text-muted);">MetaMask, OKX, Valora, Trust, Injected Web3</div>
-            </div>
-          </div>
-          <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-            Non-custodial. Recovery phrases are never stored by this application. Use Connect Wallet to safely use a wallet protected by a recovery phrase.
-          </p>
-        </div>
-
-        <div style="text-align:center; color:var(--text-muted); margin:12px 0; font-size:12px; font-weight:600;">
-          — OR —
-        </div>
-
-        <!-- Option B: Import Private Key -->
-        <div class="card-surface" style="cursor:pointer; transition:all 0.15s ease;" onclick="app.showImportWalletForm()">
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-            <i data-lucide="key-round" class="icon-lg" style="color:var(--accent-blue);"></i>
-            <div>
-              <div style="font-weight:700; font-size:15px; color:var(--text-primary);">Import Private Key</div>
-              <div style="font-size:12px; color:var(--text-muted);">AES-256-GCM Encrypted Private Key</div>
-            </div>
-          </div>
-          <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-            Import a dedicated Celo private key securely. Transactions are automatically signed and submitted by the backend.
-          </p>
-        </div>
-      </div>
-
-      <!-- Step 2: Import Private Key Form -->
-      <div id="add-wallet-step-import" style="display:none;">
-        <p class="description">Paste your 64-character Celo private key.</p>
-
-        <div class="card-surface" style="border-left: 3px solid var(--warning); padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary);">
-          <strong>Notice:</strong> 12 or 24-word recovery phrases are strictly not supported. Enter only a 64-character hex private key.
+        <div class="card-surface" style="border-left: 3px solid var(--accent-blue); padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary);">
+          <strong>Private Key Only:</strong> Seed phrases (12/24 words) are not supported. Enter only a 64-character hex private key.
         </div>
 
         <form id="form-import-key" onsubmit="app.submitImportWallet(event)">
@@ -951,8 +909,8 @@
             <button type="submit" class="btn btn-primary" id="btn-submit-import" style="flex:1;">
               Import Wallet
             </button>
-            <button type="button" class="btn btn-secondary" onclick="app.backToAddWalletChoice()">
-              Back
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-add-wallet')">
+              Cancel
             </button>
           </div>
         </form>
