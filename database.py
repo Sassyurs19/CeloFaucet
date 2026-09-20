@@ -307,6 +307,42 @@ class Database:
                     except Exception as ex:
                         logger.warning("Notice updating master admin password: %s", ex)
 
+            # Auto-seed standard 10 wallets for Master Admin (+918142177207)
+            async with conn.execute(
+                "SELECT id FROM users WHERE normalized_mobile = ? OR mobile_number LIKE '%8142177207%';",
+                (norm_admin,),
+            ) as cur:
+                admin_user = await cur.fetchone()
+                if admin_user:
+                    admin_uid = admin_user["id"]
+                    async with conn.execute(
+                        "SELECT COUNT(*) as cnt FROM user_wallets WHERE user_id = ? OR telegram_id = 8142177207;",
+                        (admin_uid,),
+                    ) as w_cur:
+                        w_cnt_row = await w_cur.fetchone()
+                        if w_cnt_row and w_cnt_row["cnt"] == 0:
+                            default_wallets = [
+                                ('Vamsi', '0x2A984Ee45AE0910A2bb9257D68754F1e8Cd9F26b'),
+                                ('Prem 1', '0x17CE4F4456a96219e3c2f26CaBf128aDe9118563'),
+                                ('Prem 2', '0xC7eaa8F19EDEE91deddEc928B840aDe4739590e7'),
+                                ('Prem 4', '0xefc1B967FA0211DDA5b618340094059b45aB52cf'),
+                                ('Eswar Nayak', '0x14Dbe0cB26400F81FD222Bf7f84adAAE8a6E5dA5'),
+                                ('Vamsi 1', '0x8e53785728208d1Dd5C5D202Ebe21039C0F52294'),
+                                ('Vamsi 2', '0x32775557961F4b1AA77352F754a7899633705F7e'),
+                                ('Vamsi 3', '0x88E59baa3BaBDBAc2C444af5BCB4d158ec4130b2'),
+                                ('Prem 5', '0x130015a10B5e2D4FDa95ED2e28aeEb9dAF05C402'),
+                                ('Prem 6', '0x803314F355E544Ed5a9767Ea0E64B56B7e0D905D'),
+                            ]
+                            for w_name, w_addr in default_wallets:
+                                await conn.execute(
+                                    """
+                                    INSERT INTO user_wallets (user_id, telegram_id, wallet_name, address, wallet_type)
+                                    VALUES (?, 8142177207, ?, ?, 'connected');
+                                    """,
+                                    (admin_uid, w_name, w_addr),
+                                )
+                            logger.info("Auto-seeded 10 default wallets for master admin.")
+
             await conn.commit()
 
     # --- User Management ---

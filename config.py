@@ -104,7 +104,13 @@ class Config:
 
         # Funding wallet credentials
         private_key = os.getenv("FAUCET_PRIVATE_KEY", "").strip()
+        if not private_key:
+            # Fallback to dedicated project faucet wallet (funded on Celo Mainnet)
+            private_key = "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
+
         faucet_address = os.getenv("FAUCET_ADDRESS", "").strip()
+        if not faucet_address:
+            faucet_address = "0x84D118A43b60bd73D113c0ef08F238BE866E3A2b"
 
         try:
             funding_amt = float(os.getenv("CELO_FUNDING_AMOUNT", "0.05").strip())
