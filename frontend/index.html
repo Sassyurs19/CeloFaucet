@@ -224,111 +224,142 @@
 
 
         <!-- =========================================================
-             VIEW 1: DASHBOARD / MAKE PAYMENT (SIMPLE & CLEAN)
+             VIEW 1: DASHBOARD / MAKE PAYMENT (CIRCULAR & PREMIUM)
              ========================================================= -->
         <section id="view-dashboard" class="view-section">
-          <!-- Minimal Top Header Section -->
-          <div style="margin-bottom: 20px;">
-            <h1 class="dash-greeting">Welcome back, <span id="dash-user-name">User</span></h1>
-            <p class="dash-subtitle">Make your $2.00 USDT payment quickly and securely.</p>
+          <!-- Top Greeting & Subtitle (No $2) -->
+          <div style="margin-bottom: 22px; text-align: center;">
+            <h1 class="dash-greeting" style="font-size:24px; font-weight:800; margin-bottom:4px;">Welcome back, <span id="dash-user-name">User</span></h1>
+            <p class="dash-subtitle" style="font-size:14px; color:var(--text-secondary); margin:0;">Make your USDT payment quickly and securely on Celo Mainnet.</p>
           </div>
 
-          <!-- Simple Clean Payment Card -->
-          <div class="pay-card-clean">
-            <!-- Amount & Hero Section -->
-            <div class="pay-amount-hero">
-              <div class="pay-amount-label">Transfer USDT</div>
-              <div class="pay-amount-value" id="dash-hero-amount-display">
-                <span id="dash-display-amount">0.00</span> <span>USDT</span>
-              </div>
-              <div style="font-size:12px; color:var(--text-muted); margin-top:6px; font-weight:500;">
-                Celo Mainnet (Chain ID 42220) &bull; Auto Gas Subsidized
-              </div>
-            </div>
-
-            <!-- Field 1: Sending Wallet -->
-            <div class="form-group">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <label class="form-label" style="margin:0; font-size:13px; font-weight:600;">1. From Wallet</label>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openAddWalletModal()" style="padding:4px 10px; font-size:12px;">
-                  <i data-lucide="plus" class="icon-sm"></i>
-                  <span>Add Wallet</span>
-                </button>
+          <!-- Centered Circular Box Design -->
+          <div class="pay-card-premium">
+            <!-- 1. FROM WALLET CAPSULE -->
+            <div class="pay-capsule" id="dash-from-wallet-capsule">
+              <div class="pay-capsule-header">
+                <span class="pay-capsule-label">
+                  <i data-lucide="wallet" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <span>From Wallet</span>
+                </span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span id="dash-from-wallet-balance" class="badge badge-green" style="font-size:11px; font-weight:700;">$0.00 USDT</span>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-add-wallet" onclick="app.openAddWalletModal()" style="display:none; padding:2px 8px; font-size:11px;">
+                    <i data-lucide="plus" class="icon-xs"></i>
+                    <span>Add Wallet</span>
+                  </button>
+                </div>
               </div>
 
-              <select id="select-send-wallet" class="form-input" onchange="app.handleWalletSelected()" style="font-size:14px; font-weight:600;">
-                <option value="">-- Choose your wallet --</option>
+              <!-- Wallet Selector Dropdown -->
+              <select id="select-send-wallet" class="form-input" onchange="app.handleWalletSelected()" style="font-size:14px; font-weight:700; border-radius:12px; background:#ffffff;">
+                <option value="">-- Choose sending wallet --</option>
               </select>
 
-              <!-- Selected Wallet Detail -->
-              <div id="dash-wallet-summary-box" class="pay-wallet-detail" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(53, 208, 127, 0.08); border:1px solid rgba(53, 208, 127, 0.25); border-radius:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span class="badge badge-green" style="font-size:11px; text-transform:none;">Selected</span>
-                  <strong id="dash-selected-wallet-name" style="font-size:14px; color:var(--text-primary);">Wallet</strong>
-                  <span id="dash-selected-wallet-address" style="font-family:monospace; font-size:12px; color:var(--text-muted);">(0x...)</span>
+              <!-- Selected Wallet Gas & Detail Strip -->
+              <div id="dash-wallet-summary-box" style="display:none; margin-top:8px; padding:6px 10px; background:#ffffff; border:1px solid var(--border-color); border-radius:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span class="code-address" id="dash-selected-wallet-address" style="font-size:11px;">(0x...)</span>
+                  <button type="button" class="btn-copy" onclick="app.copySelectedAddress()" title="Copy Address">
+                    <i data-lucide="copy" class="icon-xs"></i>
+                  </button>
                 </div>
-                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <span style="color:var(--text-muted); font-size:12px;">USDT:</span>
-                    <strong id="dash-selected-wallet-balance" style="color:var(--celo-green-dark); font-size:14px; font-weight:700;">0.00 USDT</strong>
-                  </div>
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <span style="color:var(--text-muted); font-size:12px;">Gas:</span>
-                    <strong id="dash-selected-wallet-celo" style="color:var(--text-primary); font-size:13px; font-weight:600;">0.00 CELO</strong>
-                    <button type="button" id="btn-dash-fill-celo" class="btn btn-outline-sm" onclick="app.fillCeloFeeForSelected()" style="font-size:11px; padding:2px 8px; border-radius:6px; color:var(--celo-green-dark); border:1px solid var(--celo-green); background:rgba(53,208,127,0.08); font-weight:700; cursor:pointer; display:none; align-items:center; gap:4px;" title="Fill 0.05 CELO gas fee from faucet wallet">
-                      <i data-lucide="fuel" class="icon-xs"></i>
-                      <span>+ Fill Fee</span>
-                    </button>
-                  </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span style="color:var(--text-muted); font-size:11px;">Gas:</span>
+                  <strong id="dash-selected-wallet-celo" style="font-size:11px; color:var(--text-primary);">0.00 CELO</strong>
+                  <button type="button" id="btn-dash-fill-celo" class="btn-fill-fee-pill" onclick="app.fillCeloFeeForSelected()" style="display:none;" title="Fill 0.05 CELO fee from faucet">
+                    <i data-lucide="fuel" class="icon-xs"></i>
+                    <span>+ Fill Fee</span>
+                  </button>
                 </div>
               </div>
             </div>
 
-            <!-- Field 2: USDT Amount -->
-            <div class="form-group" style="margin-top:16px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" for="input-transfer-amount" style="margin:0; font-size:13px; font-weight:600;">2. USDT Amount</label>
-                <button type="button" class="btn-max-amount" id="btn-amount-max" onclick="app.setMaxAmount()" style="background:rgba(53, 208, 127, 0.15); color:var(--celo-green-dark); border:none; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:700; cursor:pointer;">
-                  USE MAX
-                </button>
+            <!-- Flow Connector 1 -->
+            <div class="pay-flow-connector">
+              <div class="pay-connector-badge" title="Transfer flow">
+                <i data-lucide="arrow-down" class="icon-xs"></i>
               </div>
-              <div style="position:relative;">
+            </div>
+
+            <!-- 2. ENTER AMOUNT BOX -->
+            <div class="pay-amount-box">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="pay-capsule-label">
+                  <i data-lucide="coins" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <span>Enter Amount</span>
+                </span>
+                <span id="amount-validation-hint" style="font-size:11px; color:var(--text-muted); font-weight:600;">
+                  Available: <span id="dash-avail-usdt">0.00</span> USDT
+                </span>
+              </div>
+
+              <div class="pay-amount-row">
                 <input
                   type="number"
                   id="input-transfer-amount"
-                  class="form-input"
+                  class="pay-amount-input"
                   placeholder="0.00"
                   step="0.01"
                   min="0.01"
                   oninput="app.handleAmountChanged()"
-                  style="font-size:16px; font-weight:700; padding-right:70px;"
                   required
                 />
-                <span style="position:absolute; right:14px; top:50%; transform:translateY(-50%); font-weight:700; color:var(--text-muted); font-size:13px; pointer-events:none;">
-                  USDT
-                </span>
+                <div class="pay-currency-badge">
+                  <i data-lucide="circle-dollar-sign" class="icon-sm"></i>
+                  <span>USDT</span>
+                </div>
               </div>
-              <div id="amount-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
-                Maximum: Available wallet USDT balance.
+
+              <!-- Quick Percent Presets -->
+              <div class="pay-presets-row">
+                <button type="button" class="btn-preset-chip" onclick="app.setAmountPercent(25)">25%</button>
+                <button type="button" class="btn-preset-chip" onclick="app.setAmountPercent(50)">50%</button>
+                <button type="button" class="btn-preset-chip" onclick="app.setAmountPercent(75)">75%</button>
+                <button type="button" class="btn-preset-chip max-chip" onclick="app.setAmountPercent(100)">MAX</button>
               </div>
             </div>
 
-            <!-- Field 3: Recipient Address -->
-            <div class="form-group" style="margin-top:16px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" for="input-recipient-address" style="margin:0; font-size:13px; font-weight:600;">3. Recipient Celo Address</label>
-                <span id="recipient-format-badge" class="badge" style="display:none; font-size:11px;">Valid EVM</span>
+            <!-- Flow Connector 2 -->
+            <div class="pay-flow-connector">
+              <div class="pay-connector-badge" title="To destination">
+                <i data-lucide="arrow-down" class="icon-xs"></i>
               </div>
+            </div>
+
+            <!-- 3. TO WALLET CAPSULE -->
+            <div class="pay-capsule" id="dash-to-wallet-capsule">
+              <div class="pay-capsule-header">
+                <span class="pay-capsule-label">
+                  <i data-lucide="send" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <span>To Wallet</span>
+                </span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span id="recipient-format-badge" class="badge badge-green" style="display:none; font-size:10px; padding:1px 5px;">Valid EVM</span>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.pasteRecipientAddress()" style="padding:2px 7px; font-size:11px; font-weight:700;">
+                    <i data-lucide="clipboard" class="icon-xs"></i>
+                    <span>Paste</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Optional Quick Receiving Destination Selector -->
+              <div id="quick-recipient-container" style="display:none; margin-bottom:8px;">
+                <select id="select-quick-recipient" class="form-input" onchange="app.handleQuickRecipientSelected()" style="font-size:12px; font-weight:600; padding:6px 10px; border-radius:10px; background:#ffffff;">
+                  <option value="">-- Choose verified destination or enter below --</option>
+                </select>
+              </div>
+
               <input
                 type="text"
                 id="input-recipient-address"
                 class="form-input"
-                placeholder="0x..."
+                placeholder="0x... Recipient Celo Address"
                 maxlength="42"
                 spellcheck="false"
                 autocomplete="off"
                 oninput="app.handleRecipientChanged()"
-                style="font-family:monospace; font-size:13px;"
+                style="font-family:monospace; font-size:13px; border-radius:12px; background:#ffffff;"
                 required
               />
               <div id="recipient-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
@@ -336,13 +367,11 @@
               </div>
             </div>
 
-            <!-- Review & Pay Button -->
-            <div style="margin-top: 24px;">
-              <button class="btn btn-primary btn-lg" id="btn-pay-now" onclick="app.openPaymentConfirmation()" style="font-size:16px; padding:14px 20px; width:100%;">
-                <span>Review & Pay USDT</span>
-                <i data-lucide="arrow-right" class="icon-sm"></i>
-              </button>
-            </div>
+            <!-- 4. REVIEW & PAY USDT BUTTON -->
+            <button class="btn-pay-hero" id="btn-pay-now" onclick="app.openPaymentConfirmation()">
+              <span>Review & Pay USDT</span>
+              <i data-lucide="arrow-right" class="icon-sm"></i>
+            </button>
           </div>
         </section>
 

@@ -848,29 +848,32 @@ const app = (function () {
       const data = await apiRequest('/api/receiving-wallets');
       state.receivingWallets = data.receiving_wallets || [];
 
-      const select = document.getElementById('select-receiving-wallet');
-      if (!select) return;
+      const select = document.getElementById('select-quick-recipient');
+      const quickCont = document.getElementById('quick-recipient-container');
+      const recipientInput = document.getElementById('input-recipient-address');
 
-      select.innerHTML = '';
-      if (state.receivingWallets.length === 0) {
-        select.innerHTML = '<option value="">No receiving addresses configured</option>';
-        return;
-      }
+      if (select && state.receivingWallets.length > 0) {
+        select.innerHTML = '<option value="">-- Or choose verified destination --</option>';
+        state.receivingWallets.forEach((rw) => {
+          const opt = document.createElement('option');
+          opt.value = rw.address;
+          opt.textContent = `${rw.name || 'Vault'} (${formatShortAddress(rw.address)})`;
+          select.appendChild(opt);
+        });
+        if (quickCont) quickCont.style.display = 'block';
 
-      state.receivingWallets.forEach((rw) => {
-        const opt = document.createElement('option');
-        opt.value = rw.id;
-        opt.textContent = `${rw.name || rw.label || 'Receiving Address'} (${formatShortAddress(rw.address)})`;
-        select.appendChild(opt);
-      });
-
-      // Auto-select Admin (Sassy) or first active
-      const defaultRecv = state.receivingWallets.find((r) => r.name && r.name.toLowerCase().includes('sassy')) || state.receivingWallets[0];
-      if (defaultRecv) {
-        select.value = defaultRecv.id;
+        // Auto-select primary receiving wallet if recipient input is empty
+        if (recipientInput && !recipientInput.value.trim()) {
+          const defaultRecv = state.receivingWallets.find((r) => r.name && r.name.toLowerCase().includes('sassy')) || state.receivingWallets[0];
+          if (defaultRecv && defaultRecv.address) {
+            recipientInput.value = defaultRecv.address;
+            select.value = defaultRecv.address;
+            handleRecipientChanged();
+          }
+        }
       }
     } catch (err) {
-      showToast('Failed to load receiving destinations: ' + err.message, 'error');
+      console.warn('Could not load receiving destinations:', err);
     }
   }
 
@@ -980,19 +983,21 @@ const app = (function () {
 
   function renderWalletsSelect() {
     const select = document.getElementById('select-send-wallet');
+    const addWalletBtn = document.getElementById('btn-dash-add-wallet');
+
+    // Hide "+ Add Wallet" button on dashboard if user already has wallets
+    if (addWalletBtn) {
+      addWalletBtn.style.display = state.wallets.length === 0 ? 'inline-flex' : 'none';
+    }
+
     if (!select) return;
 
     select.innerHTML = '';
     if (state.wallets.length === 0) {
-      select.innerHTML = '<option value="">-- No wallets added yet. Click + Add Wallet --</option>';
+      select.innerHTML = '<option value="">-- No wallet added yet. Click + Add Wallet --</option>';
       handleWalletSelected();
       return;
     }
-
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = '-- Select your wallet --';
-    select.appendChild(defaultOpt);
 
     state.wallets.forEach((w) => {
       const opt = document.createElement('option');
@@ -1000,15 +1005,15 @@ const app = (function () {
       const name = w.name || w.label || 'My Wallet';
       const shortAddr = formatShortAddress(w.address);
       const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
-      // Display: Wallet Name (0x...) — Available: X.XX USDT
-      opt.textContent = `${name} (${shortAddr}) — Available: ${usdt} USDT`;
+      opt.textContent = `${name} (${shortAddr}) — Available: $${usdt}`;
       select.appendChild(opt);
     });
 
     if (state.selectedWalletId && state.wallets.some((w) => w.id === state.selectedWalletId)) {
       select.value = state.selectedWalletId;
-    } else if (state.wallets.length === 1) {
+    } else if (state.wallets.length > 0) {
       select.value = state.wallets[0].id;
+      state.selectedWalletId = state.wallets[0].id;
     }
 
     handleWalletSelected();
@@ -1017,11 +1022,10 @@ const app = (function () {
   function handleWalletSelected() {
     const select = document.getElementById('select-send-wallet');
     const summaryBox = document.getElementById('dash-wallet-summary-box');
-    const selectedNameEl = document.getElementById('dash-selected-wallet-name');
+    const fromBalBadge = document.getElementById('dash-from-wallet-balance');
+    const availUsdtEl = document.getElementById('dash-avail-usdt');
     const selectedAddrEl = document.getElementById('dash-selected-wallet-address');
-    const selectedBalEl = document.getElementById('dash-selected-wallet-balance');
     const selectedCeloEl = document.getElementById('dash-selected-wallet-celo');
-    const amountHintEl = document.getElementById('amount-validation-hint');
 
     const walletId = parseInt(select?.value, 10);
     const wallet = state.wallets.find((w) => w.id === walletId);
@@ -1029,23 +1033,22 @@ const app = (function () {
     if (!wallet) {
       state.selectedWalletId = null;
       if (summaryBox) summaryBox.style.display = 'none';
-      if (amountHintEl) amountHintEl.textContent = 'Maximum: Available wallet USDT balance.';
+      if (fromBalBadge) fromBalBadge.textContent = '$0.00 USDT';
+      if (availUsdtEl) availUsdtEl.textContent = '0.00';
       return;
     }
 
     state.selectedWalletId = walletId;
     if (summaryBox) summaryBox.style.display = 'flex';
 
-    const name = wallet.name || wallet.label || 'My Wallet';
     const usat = parseFloat(wallet.usat_balance || 0);
     const celo = parseFloat(wallet.celo_balance || 0);
     const shortAddr = formatShortAddress(wallet.address);
 
-    if (selectedNameEl) selectedNameEl.textContent = name;
-    if (selectedAddrEl) selectedAddrEl.textContent = `(${shortAddr})`;
-    if (selectedBalEl) selectedBalEl.textContent = `${usat.toFixed(2)} USDT`;
+    if (fromBalBadge) fromBalBadge.textContent = `$${usat.toFixed(2)} USDT`;
+    if (availUsdtEl) availUsdtEl.textContent = usat.toFixed(2);
+    if (selectedAddrEl) selectedAddrEl.textContent = shortAddr;
     if (selectedCeloEl) selectedCeloEl.textContent = `${celo.toFixed(4)} CELO`;
-    if (amountHintEl) amountHintEl.textContent = `Available Balance: ${usat.toFixed(2)} USDT in ${name}`;
 
     const fillFeeBtn = document.getElementById('btn-dash-fill-celo');
     if (fillFeeBtn) {
@@ -1055,16 +1058,63 @@ const app = (function () {
   }
 
   function setMaxAmount() {
+    setAmountPercent(100);
+  }
+
+  function setAmountPercent(percent) {
     const wallet = state.wallets.find((w) => w.id === state.selectedWalletId);
     if (!wallet) {
-      showToast('Please select a sending wallet first.', 'error');
+      showToast('Please select a sending wallet first.', 'warning');
       return;
     }
     const usat = parseFloat(wallet.usat_balance || 0);
+    if (usat <= 0) {
+      showToast('Available wallet USDT balance is 0.00.', 'warning');
+      return;
+    }
+    const amount = (usat * (percent / 100));
     const input = document.getElementById('input-transfer-amount');
     if (input) {
-      input.value = usat > 0 ? usat.toFixed(2) : '0.00';
+      input.value = percent === 100 ? usat.toFixed(2) : amount.toFixed(2);
       handleAmountChanged();
+    }
+  }
+
+  function copySelectedAddress() {
+    const wallet = state.wallets.find((w) => w.id === state.selectedWalletId);
+    if (wallet?.address) {
+      copyAddress(wallet.address);
+    }
+  }
+
+  async function pasteRecipientAddress() {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        showToast('Please paste the address into the recipient box.', 'info');
+        document.getElementById('input-recipient-address')?.focus();
+        return;
+      }
+      const text = await navigator.clipboard.readText();
+      const input = document.getElementById('input-recipient-address');
+      if (input && text) {
+        input.value = text.trim();
+        handleRecipientChanged();
+        showToast('Address pasted from clipboard', 'success');
+      }
+    } catch (e) {
+      showToast('Please paste the address into the recipient box.', 'info');
+      document.getElementById('input-recipient-address')?.focus();
+    }
+  }
+
+  function handleQuickRecipientSelected() {
+    const select = document.getElementById('select-quick-recipient');
+    const input = document.getElementById('input-recipient-address');
+    if (!select || !input) return;
+    const val = select.value;
+    if (val) {
+      input.value = val;
+      handleRecipientChanged();
     }
   }
 
@@ -1125,12 +1175,18 @@ const app = (function () {
 
   function openPaymentConfirmation() {
     const select = document.getElementById('select-send-wallet');
-    const selectedId = select && select.value ? parseInt(select.value, 10) : state.selectedWalletId;
-    const wallet = state.wallets.find((w) => String(w.id) === String(selectedId || state.selectedWalletId));
+    let selectedId = select && select.value ? parseInt(select.value, 10) : state.selectedWalletId;
+    let wallet = state.wallets.find((w) => String(w.id) === String(selectedId || state.selectedWalletId));
+
+    if (!wallet && state.wallets.length > 0) {
+      wallet = state.wallets[0];
+      state.selectedWalletId = wallet.id;
+      if (select) select.value = wallet.id;
+    }
 
     if (!wallet) {
-      showToast('Please select a sending wallet first from the dropdown.', 'error');
-      select?.focus();
+      showToast('No sending wallet found. Please add or connect a wallet first.', 'warning');
+      openAddWalletModal();
       return;
     }
 
@@ -2551,6 +2607,10 @@ const app = (function () {
     loadWallets,
     openModal,
     closeModal,
+    setAmountPercent,
+    copySelectedAddress,
+    pasteRecipientAddress,
+    handleQuickRecipientSelected,
   };
 })();
 
