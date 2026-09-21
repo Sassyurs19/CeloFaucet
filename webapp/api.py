@@ -828,6 +828,65 @@ async def api_get_receiving_wallets(request: web.Request) -> web.Response:
     return web.json_response({"receiving_wallets": clean_list})
 
 
+async def api_get_saved_recipients(request: web.Request) -> web.Response:
+    """List addresses personally saved by the authenticated user."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    recipients = await db.get_saved_recipients(user_id)
+    return web.json_response({
+        "recipients": [{
+            "id": recipient["id"],
+            "name": recipient["name"],
+            "address": recipient["address"],
+            "created_at": recipient.get("created_at"),
+        } for recipient in recipients]
+    })
+
+
+async def api_save_recipient(request: web.Request) -> web.Response:
+    """Save a named Celo address for the authenticated user."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+    name = str(data.get("name") or "").strip()
+    address = str(data.get("address") or "").strip()
+    if not name or len(name) > 40:
+        return web.json_response({"error": "Recipient name must be 1–40 characters."}, status=400)
+
+    valid, checksum_address, error = validate_celo_address(address)
+    if not valid or not checksum_address:
+        return web.json_response({"error": error or "Invalid Celo address."}, status=400)
+
+    await db.save_recipient(user_id, name, checksum_address)
+    return web.json_response({
+        "success": True,
+        "recipient": {"name": name, "address": checksum_address},
+    })
+
+
+async def api_delete_saved_recipient(request: web.Request) -> web.Response:
+    """Delete a recipient owned by the authenticated user."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        recipient_id = int(request.match_info["id"])
+    except (KeyError, TypeError, ValueError):
+        return web.json_response({"error": "Invalid recipient ID."}, status=400)
+
+    if not await db.delete_saved_recipient(recipient_id, user_id):
+        return web.json_response({"error": "Recipient not found."}, status=404)
+    return web.json_response({"success": True})
+
+
 async def api_create_payment(request: web.Request) -> web.Response:
     """
     Enforce fixed $2.00 USAT payment creation:
@@ -1816,6 +1875,9 @@ def register_api_routes(app: web.Application) -> None:
 
     # Payments
     app.router.add_get("/api/receiving-wallets", api_get_receiving_wallets)
+    app.router.add_get("/api/recipients", api_get_saved_recipients)
+    app.router.add_post("/api/recipients", api_save_recipient)
+    app.router.add_delete("/api/recipients/{id}", api_delete_saved_recipient)
     app.router.add_post("/api/payments/create", api_create_payment)
     app.router.add_post("/api/payments/confirm-hash", api_submit_payment_hash)
     app.router.add_post("/api/payments/cancel-active", api_cancel_payment)

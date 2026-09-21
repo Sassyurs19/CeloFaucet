@@ -379,6 +379,15 @@
               <div id="recipient-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
                 Enter a 42-character Celo/EVM address starting with 0x.
               </div>
+              <div class="saved-recipient-actions">
+                <select id="select-saved-recipient" class="form-input saved-recipient-select" onchange="app.handleSavedRecipientSelected()">
+                  <option value="">Saved recipients</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openSaveRecipientModal()">
+                  <i data-lucide="bookmark-plus" class="icon-xs"></i>
+                  <span>Save address</span>
+                </button>
+              </div>
             </div>
 
             <!-- 4. REVIEW & PAY USDT BUTTON -->
@@ -1120,6 +1129,29 @@
       <div id="wallet-history-content" class="wallet-history-content">
         <!-- Loaded dynamically -->
       </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL 7: SAVE RECIPIENT
+       ========================================================= -->
+  <div id="modal-save-recipient" class="modal-overlay">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Save Recipient</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-save-recipient')">&times;</button>
+      </div>
+      <form id="form-save-recipient" onsubmit="app.submitSaveRecipient(event)">
+        <div class="form-group">
+          <label class="form-label">Recipient Name</label>
+          <input type="text" id="saved-recipient-name" class="form-input" placeholder="e.g. My Friend" required maxlength="40">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Celo Address</label>
+          <input type="text" id="saved-recipient-address" class="form-input" readonly style="font-family:monospace; font-size:12px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Save Recipient</button>
+      </form>
     </div>
   </div>
 

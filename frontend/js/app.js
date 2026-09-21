@@ -19,6 +19,7 @@ const app = (function () {
     wallets: [],
     selectedWalletId: null,
     receivingWallets: [],
+    savedRecipients: [],
     payments: [],
     isSubmitting: false,
     activePayment: null,
@@ -888,7 +889,7 @@ const app = (function () {
         const dashUser = document.getElementById('dash-user-name');
         if (dashUser) dashUser.textContent = state.user.full_name || state.user.name || 'User';
       }
-      await Promise.all([loadWallets(), loadReceivingWallets()]);
+      await Promise.all([loadWallets(), loadReceivingWallets(), loadSavedRecipients()]);
     } finally {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
@@ -900,6 +901,30 @@ const app = (function () {
       state.receivingWallets = data.receiving_wallets || [];
     } catch (err) {
       console.warn('Could not load receiving destinations:', err);
+    }
+  }
+
+  async function loadSavedRecipients() {
+    try {
+      const data = await apiRequest('/api/recipients');
+      state.savedRecipients = data.recipients || [];
+      renderSavedRecipients();
+    } catch (err) {
+      // Saved recipients are optional UI data; do not interrupt the payment form.
+      console.warn('Could not load saved recipients:', err);
+    }
+  }
+
+  function renderSavedRecipients() {
+    const select = document.getElementById('select-saved-recipient');
+    if (!select) return;
+    const selectedAddress = select.value;
+    const recipients = state.savedRecipients || [];
+    select.innerHTML = '<option value="">Saved recipients</option>' + recipients.map((recipient) =>
+      `<option value="${escapeHtml(recipient.address)}">${escapeHtml(recipient.name)} · ${escapeHtml(formatShortAddress(recipient.address))}</option>`
+    ).join('');
+    if (recipients.some((recipient) => recipient.address === selectedAddress)) {
+      select.value = selectedAddress;
     }
   }
 
@@ -1293,6 +1318,55 @@ const app = (function () {
     if (val) {
       input.value = val;
       handleRecipientChanged();
+    }
+  }
+
+  function handleSavedRecipientSelected() {
+    const select = document.getElementById('select-saved-recipient');
+    const input = document.getElementById('input-recipient-address');
+    if (!select || !input || !select.value) return;
+    input.value = select.value;
+    handleRecipientChanged();
+  }
+
+  function openSaveRecipientModal() {
+    const addressInput = document.getElementById('input-recipient-address');
+    const rawAddress = addressInput?.value?.trim() || '';
+    if (!isValidCeloAddress(rawAddress)) {
+      showToast('Enter a valid recipient address before saving it.', 'warning');
+      addressInput?.focus();
+      return;
+    }
+    const nameInput = document.getElementById('saved-recipient-name');
+    const savedAddressInput = document.getElementById('saved-recipient-address');
+    if (nameInput) nameInput.value = '';
+    if (savedAddressInput) savedAddressInput.value = rawAddress;
+    openModal('modal-save-recipient');
+    nameInput?.focus();
+  }
+
+  async function submitSaveRecipient(event) {
+    event.preventDefault();
+    const nameInput = document.getElementById('saved-recipient-name');
+    const addressInput = document.getElementById('saved-recipient-address');
+    const name = nameInput?.value?.trim() || '';
+    const address = addressInput?.value?.trim() || '';
+    if (!name || !isValidCeloAddress(address)) {
+      showToast('Enter a name and valid Celo address.', 'error');
+      return;
+    }
+    try {
+      await apiRequest('/api/recipients', {
+        method: 'POST',
+        body: JSON.stringify({ name, address }),
+      });
+      await loadSavedRecipients();
+      const select = document.getElementById('select-saved-recipient');
+      if (select) select.value = address;
+      closeModal('modal-save-recipient');
+      showToast(`${name} saved as a recipient.`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   }
 
@@ -2990,6 +3064,9 @@ const app = (function () {
     copySelectedAddress,
     pasteRecipientAddress,
     handleQuickRecipientSelected,
+    handleSavedRecipientSelected,
+    openSaveRecipientModal,
+    submitSaveRecipient,
   };
 })();
 

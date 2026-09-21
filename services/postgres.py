@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import asyncpg
 
 
-_ID_TABLES = {"users", "user_wallets", "receiving_wallets", "usat_payments", "claims"}
+_ID_TABLES = {"users", "user_wallets", "receiving_wallets", "saved_recipients", "usat_payments", "claims"}
 
 
 def _sql(sql: str) -> str:

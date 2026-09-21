@@ -891,6 +891,21 @@ i[data-lucide], svg.lucide {
   gap: 10px;
 }
 
+.saved-recipient-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.saved-recipient-select {
+  min-width: 0;
+  flex: 1;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  font-size: 12px;
+}
+
 .wallet-history-entry-bottom {
   margin-top: 8px;
   font-size: 12px;

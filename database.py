@@ -199,6 +199,21 @@ class Database:
                 """
             )
 
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_recipients (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    telegram_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, address)
+                );
+                """
+            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_recipients_owner ON saved_recipients(user_id, telegram_id);")
+
             # 4. USAT Payments table
             await conn.execute(
                 """
@@ -314,6 +329,7 @@ class Database:
             """CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL UNIQUE, username TEXT, first_name TEXT, full_name TEXT, mobile_number TEXT, normalized_mobile TEXT, password_hash TEXT, status TEXT DEFAULT 'active', last_login_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
             """CREATE TABLE IF NOT EXISTS user_wallets (id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_name TEXT NOT NULL, address TEXT NOT NULL, wallet_type TEXT NOT NULL, encrypted_private_key TEXT, metadata TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
             """CREATE TABLE IF NOT EXISTS receiving_wallets (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS saved_recipients (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), telegram_id BIGINT NOT NULL, name TEXT NOT NULL, address TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, address))""",
             """CREATE TABLE IF NOT EXISTS usat_payments (id BIGSERIAL PRIMARY KEY, payment_id TEXT NOT NULL UNIQUE, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_type TEXT NOT NULL, from_address TEXT NOT NULL, to_address TEXT NOT NULL, receiving_wallet_name TEXT NOT NULL, amount_usat TEXT NOT NULL DEFAULT '2.00', amount_base_units NUMERIC(78,0) NOT NULL, status TEXT NOT NULL, tx_hash TEXT UNIQUE, block_number BIGINT, celo_funded INTEGER DEFAULT 0, celo_fund_tx_hash TEXT UNIQUE, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
             """CREATE TABLE IF NOT EXISTS claims (id BIGSERIAL PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, telegram_id BIGINT NOT NULL, destination_address TEXT NOT NULL, amount NUMERIC, tx_hash TEXT UNIQUE, block_number BIGINT, status TEXT NOT NULL, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
             "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
@@ -321,6 +337,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_users_normalized_mobile ON users(normalized_mobile)",
             "CREATE INDEX IF NOT EXISTS idx_wallets_owner ON user_wallets(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_wallets_address ON user_wallets(address)",
+            "CREATE INDEX IF NOT EXISTS idx_saved_recipients_owner ON saved_recipients(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_payments_owner ON usat_payments(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_payments_status ON usat_payments(status)",
             "CREATE INDEX IF NOT EXISTS idx_payments_tx_hash ON usat_payments(tx_hash)",
@@ -849,6 +866,50 @@ class Database:
                 "UPDATE user_wallets SET last_used = CURRENT_TIMESTAMP WHERE id = ?;", (wallet_id,)
             )
             await conn.commit()
+
+    # --- Personal Saved Recipients ---
+
+    async def get_saved_recipients(self, user_identifier: int) -> list[dict[str, Any]]:
+        """List recipient addresses saved by the current user only."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        placeholders = ",".join("?" * len(user_ids))
+        async with self.connect() as conn:
+            async with conn.execute(
+                f"""
+                SELECT id, name, address, created_at FROM saved_recipients
+                WHERE user_id IN ({placeholders}) OR telegram_id IN ({placeholders})
+                ORDER BY LOWER(name) ASC, id ASC;
+                """,
+                user_ids + user_ids,
+            ) as cur:
+                rows = await cur.fetchall()
+                return [dict(row) for row in rows]
+
+    async def save_recipient(self, user_id: int, name: str, address: str) -> int:
+        """Save or rename one recipient address for its owner."""
+        async with self.connect() as conn:
+            async with conn.execute(
+                """
+                INSERT INTO saved_recipients (user_id, telegram_id, name, address)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, address) DO UPDATE SET name = excluded.name;
+                """,
+                (user_id, user_id, name.strip(), address),
+            ) as cur:
+                await conn.commit()
+                return cur.lastrowid or 0
+
+    async def delete_saved_recipient(self, recipient_id: int, user_identifier: int) -> bool:
+        """Remove only a recipient owned by the current user."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        placeholders = ",".join("?" * len(user_ids))
+        async with self.connect() as conn:
+            cur = await conn.execute(
+                f"DELETE FROM saved_recipients WHERE id = ? AND (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}));",
+                [recipient_id] + user_ids + user_ids,
+            )
+            await conn.commit()
+            return cur.rowcount > 0
 
     # --- Receiving Wallets (Admin Configured) ---
 
