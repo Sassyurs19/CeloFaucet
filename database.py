@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 import aiosqlite
@@ -1567,13 +1568,18 @@ class Database:
 
     # --- Durable browser sessions ---
 
-    async def create_session(self, session_id: str, user_id: int | None, is_admin: bool, expires_at: str) -> None:
-        async with self.connect() as conn:
-            await conn.execute(
-                "INSERT INTO sessions (session_id, user_id, is_admin, expires_at) VALUES (?, ?, ?, ?);",
-                (session_id, user_id, bool(is_admin) if self.using_postgres else (1 if is_admin else 0), expires_at),
-            )
-            await conn.commit()
+    async def create_session(self, session_id: str, user_id: int | None, is_admin: bool, expires_at: datetime | str) -> None:
+        try:
+            async with self.connect() as conn:
+                await conn.execute(
+                    "INSERT INTO sessions (session_id, user_id, is_admin, expires_at) VALUES (?, ?, ?, ?);",
+                    (session_id, user_id, bool(is_admin) if self.using_postgres else (1 if is_admin else 0), expires_at),
+                )
+                await conn.commit()
+        except Exception:
+            # Deliberately omit the opaque session ID and all credential material.
+            logger.exception("Unable to persist a session for user ID %s.", user_id)
+            raise
 
     async def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
         async with self.connect() as conn:

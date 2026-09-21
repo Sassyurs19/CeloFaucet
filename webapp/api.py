@@ -14,6 +14,7 @@ import re
 import secrets
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from aiohttp import web
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -54,12 +55,21 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 
 # --- Cryptographically Signed, Persistent Session Tokens ---
 
+def session_expiry(exp_days: int) -> datetime | str:
+    """Return a UTC expiry suitable for the active database driver's timestamp type."""
+    expires_utc = datetime.now(timezone.utc) + timedelta(days=exp_days)
+    if db.using_postgres:
+        return expires_utc
+    # SQLite stores CURRENT_TIMESTAMP as a UTC text value without an offset.
+    return expires_utc.strftime("%Y-%m-%d %H:%M:%S")
+
+
 async def create_session_token(user_id: int, mobile: str, is_admin: bool, exp_days: int = 30) -> str:
     """
     Generate an opaque durable server-side session token.
     """
     token = secrets.token_urlsafe(48)
-    expires_at = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + exp_days * 86400))
+    expires_at = session_expiry(exp_days)
     await db.create_session(token, user_id, is_admin, expires_at)
     return token
 
@@ -1358,7 +1368,7 @@ async def api_admin_login(request: web.Request) -> web.Response:
 
     admin_token = secrets.token_urlsafe(32)
     admin_session_user_id = user_id or (None if db.using_postgres else 0)
-    await db.create_session(admin_token, admin_session_user_id, True, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + 7 * 86400)))
+    await db.create_session(admin_token, admin_session_user_id, True, session_expiry(7))
 
     resp = web.json_response({"success": True})
     resp.set_cookie("admin_session", admin_token, max_age=86400 * 7, httponly=True,
