@@ -1719,7 +1719,6 @@ i[data-lucide], svg.lucide {
 
 .payment-stat-icon-transfer { background: rgba(53, 208, 127, 0.12); color: var(--celo-green-dark); }
 .payment-stat-icon-complete { background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); }
-.payment-stat-icon-gas { background: rgba(245, 158, 11, 0.12); color: #d97706; }
 
 .payment-stat-copy { overflow: hidden; }
 
@@ -1796,7 +1795,10 @@ i[data-lucide], svg.lucide {
   .payments-page-header .description { font-size: 12px; max-width: 210px; }
   .payments-page-header .btn { padding: 6px 9px; }
 
-  .payments-stats-grid { gap: 8px; }
+  .payments-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
   .payment-stat-card {
     min-height: 86px;
     padding: 10px 8px;

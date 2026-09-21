@@ -404,22 +404,6 @@ async def api_get_me(request: web.Request) -> web.Response:
     payments_cnt = await db.get_user_payments_count(user_id)
     total_paid = await db.get_user_total_paid(user_id)
 
-    # Compute live total USDT balance across user wallets
-    user_wallets = await db.get_user_wallets(user_id)
-
-    async def get_wallet_usdt(w):
-        _, u_bal = await celo_client.get_usat_balance(w["address"])
-        return float(u_bal)
-
-    if user_wallets:
-        try:
-            balances = await asyncio.gather(*(get_wallet_usdt(w) for w in user_wallets))
-        except BlockchainUnavailableError:
-            return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
-        total_usdt_balance = sum(balances)
-    else:
-        total_usdt_balance = 0.0
-
     is_admin = is_admin_phone(profile.get("normalized_mobile") or profile.get("mobile_number"))
     user_full_name = profile.get("full_name") or profile.get("first_name") or "User"
 
@@ -435,7 +419,9 @@ async def api_get_me(request: web.Request) -> web.Response:
             "wallets_count": wallets_cnt,
             "payments_count": payments_cnt,
             "total_paid": round(total_paid, 2),
-            "total_usdt_balance": f"{total_usdt_balance:.2f}",
+            # Authentication must remain available when blockchain RPC is not.
+            # Live balances are returned by /api/wallets instead.
+            "total_usdt_balance": None,
             "created_at": profile.get("created_at"),
         }
     })

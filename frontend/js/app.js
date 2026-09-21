@@ -511,11 +511,12 @@ const app = (function () {
     const data = await resp.json().catch(() => ({}));
 
     if (!resp.ok) {
-      // If a protected session endpoint returns 401, log out (session expired/invalid)
-      // DO NOT call handleLogout on login, register, or admin auth attempts
+      // A request can fail independently of the durable browser session. Confirm
+      // the session with the dedicated endpoint before changing the whole UI.
+      // DO NOT check again for login, registration, admin login, or /auth/me.
       const isAuthAttempt = endpoint.includes('/auth/login') || endpoint.includes('/auth/register') || endpoint.includes('/admin/login');
-      if (resp.status === 401 && !isAuthAttempt) {
-        handleLogout(false);
+      if (resp.status === 401 && !isAuthAttempt && endpoint !== '/api/auth/me') {
+        void checkSession();
       }
       throw new Error(data.error || data.message || `Server error (${resp.status})`);
     }
@@ -901,50 +902,6 @@ const app = (function () {
     }
   }
 
-  // --- Device Safety Vault: Guarantees user accounts and wallets survive server redeploys ---
-  function getDeviceVaultKey() {
-    const rawMobile = state.user?.mobile_raw || state.user?.mobile || '';
-    const digits = rawMobile.replace(/\D/g, '');
-    return 'celo_vault_wallets_' + (digits || 'current');
-  }
-
-  function saveWalletsToDeviceVault(wallets) {
-    if (!Array.isArray(wallets)) return;
-    try {
-      const key = getDeviceVaultKey();
-      const simplified = wallets.map(w => ({
-        address: w.address,
-        name: w.wallet_name || w.name || w.label || 'Saved Wallet',
-        wallet_type: w.wallet_type || 'connected',
-      })).filter(w => Boolean(w.address));
-      localStorage.setItem(key, JSON.stringify(simplified));
-    } catch (e) {
-      console.warn('Device vault save error:', e);
-    }
-  }
-
-  function getWalletsFromDeviceVault() {
-    try {
-      const key = getDeviceVaultKey();
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function removeWalletFromDeviceVault(address) {
-    if (!address) return;
-    try {
-      const key = getDeviceVaultKey();
-      const current = getWalletsFromDeviceVault();
-      const filtered = current.filter(w => w.address?.toLowerCase() !== address.toLowerCase());
-      localStorage.setItem(key, JSON.stringify(filtered));
-    } catch (e) {
-      console.warn('Device vault remove error:', e);
-    }
-  }
-
   // --- Direct On-Chain Celo & USAT Balance Querier ---
   // Queries forno.celo.org directly from the client for 100% real-time accuracy across hosting platforms
   async function fetchOnChainBalances(address) {
@@ -1016,33 +973,6 @@ const app = (function () {
       const data = await apiRequest('/api/wallets');
       let wallets = data.wallets || [];
 
-      // Auto-Recovery from Device Vault if backend was redeployed / cold-started with fresh database
-      if (wallets.length === 0) {
-        const cachedWallets = getWalletsFromDeviceVault();
-        if (cachedWallets.length > 0) {
-          console.log(`Auto-restoring ${cachedWallets.length} wallet(s) from device vault...`);
-          for (const cw of cachedWallets) {
-            try {
-              await apiRequest('/api/wallets/connect', {
-                method: 'POST',
-                body: JSON.stringify({
-                  address: cw.address,
-                  name: cw.name || 'Restored Wallet',
-                  label: cw.name || 'Restored Wallet',
-                }),
-              });
-            } catch (e) {
-              console.warn('Vault auto-sync error for wallet:', cw.address, e);
-            }
-          }
-          const refreshed = await apiRequest('/api/wallets');
-          wallets = refreshed.wallets || [];
-          if (wallets.length > 0) {
-            showToast(`Permanently restored ${wallets.length} wallet(s) from your device vault.`, 'success');
-          }
-        }
-      }
-
       // Alphabetical sorting of wallets by user-assigned name
       wallets.sort((a, b) => {
         const nameA = (a.name || a.label || '').trim().toLowerCase();
@@ -1051,9 +981,6 @@ const app = (function () {
       });
 
       state.wallets = wallets;
-      if (wallets.length > 0) {
-        saveWalletsToDeviceVault(wallets);
-      }
 
       // Render immediately with instant 0-latency feedback!
       renderWalletsSelect();
@@ -2152,9 +2079,6 @@ const app = (function () {
     const toDelete = state.wallets.find((w) => w.id === walletId);
     try {
       await apiRequest(`/api/wallets/${walletId}`, { method: 'DELETE' });
-      if (toDelete && toDelete.address) {
-        removeWalletFromDeviceVault(toDelete.address);
-      }
       const walletName = toDelete?.wallet_name || toDelete?.name || toDelete?.label || 'Wallet';
       showToast(`${walletName} deleted.`, 'success');
       await loadWallets();
@@ -2184,15 +2108,12 @@ const app = (function () {
         .filter((p) => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
         .reduce((acc, p) => acc + parseFloat(p.amount || 0), 0);
       const completedCount = payments.filter((p) => p.status === 'SUCCESS' || p.status === 'CONFIRMED').length;
-      const gasCount = payments.filter((p) => p.celo_funded).length;
 
       const volEl = document.getElementById('stat-payments-total-volume');
       const compEl = document.getElementById('stat-payments-completed-count');
-      const gasEl = document.getElementById('stat-payments-gas-count');
 
       if (volEl) volEl.textContent = `$${totalVolume.toFixed(2)} USDT`;
       if (compEl) compEl.textContent = completedCount.toString();
-      if (gasEl) gasEl.textContent = gasCount.toString();
 
       if (payments.length === 0) {
         tbody.innerHTML = `
@@ -2249,10 +2170,6 @@ const app = (function () {
              </a>`
           : '<span style="color:var(--text-muted);">-</span>';
 
-        const gasFundedBadge = p.celo_funded
-          ? '<span class="badge badge-green">0.05 CELO Gas</span>'
-          : '<span style="color:var(--text-muted); font-size:12px;">Standard</span>';
-
         const dateStr = p.created_at ? new Date(p.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-';
 
         // Desktop Table Row
@@ -2264,7 +2181,6 @@ const app = (function () {
             <td><span class="code-address">${formatShortAddress(p.from_address)}</span></td>
             <td><span class="code-address">${formatShortAddress(p.to_address)}</span></td>
             <td>${txLink}</td>
-            <td>${gasFundedBadge}</td>
             <td style="font-size:12px; color:var(--text-muted);">${dateStr}</td>
           </tr>
         `;
@@ -2288,10 +2204,6 @@ const app = (function () {
               <span class="pmc-value">
                 <span class="code-address">${formatShortAddress(p.to_address)}</span>
               </span>
-            </div>
-            <div class="pmc-row">
-              <span class="pmc-label">Gas Subsidy:</span>
-              <span class="pmc-value">${gasFundedBadge}</span>
             </div>
             <div class="pmc-row">
               <span class="pmc-label">Date:</span>
