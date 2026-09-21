@@ -1169,6 +1169,10 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     page_size = 10
     total_count = await db.get_user_payments_count(user_id)
     payments = await db.get_user_payments(user_id, limit=page_size, offset=page * page_size)
+    wallets_by_address = {
+        str(wallet.get("address", "")).lower(): wallet.get("wallet_name", "Wallet")
+        for wallet in await db.get_user_wallets(user_id)
+    }
 
     formatted = []
     for p in payments:
@@ -1176,6 +1180,7 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
             "id": p["id"],
             "payment_id": p.get("payment_id") or str(p["id"]),
             "amount": p.get("amount_usat", "2.00"),
+            "wallet_name": wallets_by_address.get(str(p.get("from_address", "")).lower(), "Wallet"),
             "from_address": p.get("from_address"),
             "to_address": p.get("to_address"),
             "receiving_wallet_name": p.get("receiving_wallet_name", "Receiving Wallet"),

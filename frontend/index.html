@@ -395,7 +395,7 @@
              ========================================================= -->
         <section id="view-wallets" class="view-section" style="display:none;">
           <!-- Sleek, Minimized Wallets Header Bar -->
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div class="payments-page-header">
             <div>
               <div style="display:flex; align-items:baseline; gap:10px;">
                 <h1 style="font-size:22px; font-weight:800; margin:0;">Your Wallets</h1>
@@ -440,32 +440,32 @@
           </div>
 
           <!-- Payment Metrics Grid -->
-          <div class="payments-stats-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
-            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
-              <div style="width:40px; height:40px; border-radius:10px; background:rgba(53, 208, 127, 0.12); display:flex; align-items:center; justify-content:center; color:var(--celo-green-dark); flex-shrink:0;">
+          <div class="payments-stats-grid">
+            <div class="card payment-stat-card">
+              <div class="payment-stat-icon payment-stat-icon-transfer">
                 <i data-lucide="arrow-up-right" class="icon-md"></i>
               </div>
-              <div style="overflow:hidden;">
+              <div class="payment-stat-copy">
                 <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Total Transferred</div>
                 <div id="stat-payments-total-volume" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">$0.00 USDT</div>
               </div>
             </div>
 
-            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
-              <div style="width:40px; height:40px; border-radius:10px; background:rgba(59, 130, 246, 0.12); display:flex; align-items:center; justify-content:center; color:var(--accent-blue); flex-shrink:0;">
+            <div class="card payment-stat-card">
+              <div class="payment-stat-icon payment-stat-icon-complete">
                 <i data-lucide="check-circle" class="icon-md"></i>
               </div>
-              <div style="overflow:hidden;">
+              <div class="payment-stat-copy">
                 <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Completed</div>
                 <div id="stat-payments-completed-count" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">0</div>
               </div>
             </div>
 
-            <div class="card" style="padding:16px; display:flex; align-items:center; gap:12px;">
-              <div style="width:40px; height:40px; border-radius:10px; background:rgba(245, 158, 11, 0.12); display:flex; align-items:center; justify-content:center; color:#d97706; flex-shrink:0;">
+            <div class="card payment-stat-card">
+              <div class="payment-stat-icon payment-stat-icon-gas">
                 <i data-lucide="fuel" class="icon-md"></i>
               </div>
-              <div style="overflow:hidden;">
+              <div class="payment-stat-copy">
                 <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Gas Subsidies</div>
                 <div id="stat-payments-gas-count" style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px;">0</div>
               </div>
@@ -478,6 +478,7 @@
               <table class="data-table">
                 <thead>
                   <tr>
+                    <th>Wallet Name</th>
                     <th>Status</th>
                     <th>Amount</th>
                     <th>From Wallet</th>
@@ -485,7 +486,6 @@
                     <th>Transaction</th>
                     <th>Gas Subsidized</th>
                     <th>Date & Time</th>
-                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="payments-table-body">
@@ -880,35 +880,22 @@
       <div class="modal-header">
         <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
           <i data-lucide="wallet" class="icon-sm" style="color:var(--accent-blue);"></i>
-          <span>Add / Import Wallet</span>
+          <span>Import Wallet</span>
         </h3>
         <button class="modal-close" onclick="app.closeModal('modal-add-wallet')">&times;</button>
       </div>
 
-      <div style="padding: 16px 20px 0 20px;">
-        <button type="button" class="btn btn-secondary" onclick="app.handleConnectInBrowserWallet()" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 14px; font-weight:700; border:1px solid var(--accent-blue); background:rgba(37,99,235,0.04); color:var(--accent-blue);">
-          <i data-lucide="link-2" class="icon-sm"></i>
-          <span>Connect In-Browser Wallet (MetaMask / OKX)</span>
-        </button>
-        <div style="display:flex; align-items:center; margin:16px 0; text-align:center;">
-          <div style="flex:1; border-top:1px solid var(--border-color);"></div>
-          <span style="padding:0 10px; font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase;">Or Import Private Key</span>
-          <div style="flex:1; border-top:1px solid var(--border-color);"></div>
-        </div>
-      </div>
-
       <div id="add-wallet-step-import" style="padding-top:0;">
-        <p class="description">Enter your wallet name and 64-character Celo private key.</p>
+        <p class="description">Enter a wallet name and private key.</p>
 
         <div class="card-surface" style="border-left: 3px solid var(--accent-blue); padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary);">
-          <strong>Private Key Only:</strong> Seed phrases (12/24 words) are not supported. Enter only a 64-character hex private key.
+          <strong>Private key only.</strong> Seed phrases are not supported.
         </div>
 
         <form id="form-import-key" onsubmit="app.submitImportWallet(event)">
           <div class="form-group">
             <label class="form-label">Wallet Name</label>
-            <input type="text" id="import-wallet-label" class="form-input" placeholder="e.g. Primary Hot Wallet" required maxlength="40">
-            <div class="form-help">Choose a custom name for this wallet.</div>
+            <input type="text" id="import-wallet-label" class="form-input" placeholder="Wallet 1" required maxlength="40">
           </div>
 
           <div class="form-group">
@@ -919,15 +906,11 @@
                 <i data-lucide="eye" class="icon-sm"></i>
               </button>
             </div>
-            <div class="form-help">Your key is authenticated and encrypted via AES-256-GCM. Never shared.</div>
           </div>
 
-          <div style="display:flex; gap:10px; margin-top:20px;">
-            <button type="submit" class="btn btn-primary" id="btn-submit-import" style="flex:1;">
+          <div style="margin-top:20px;">
+            <button type="submit" class="btn btn-primary" id="btn-submit-import" style="width:100%;">
               Import Wallet
-            </button>
-            <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-add-wallet')">
-              Cancel
             </button>
           </div>
         </form>

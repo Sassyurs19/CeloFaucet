@@ -1684,6 +1684,74 @@ i[data-lucide], svg.lucide {
 }
 
 /* --- Mobile Responsive Navbar & Payment Views --- */
+.payments-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.payments-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.payment-stat-card {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.payment-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.payment-stat-icon-transfer { background: rgba(53, 208, 127, 0.12); color: var(--celo-green-dark); }
+.payment-stat-icon-complete { background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); }
+.payment-stat-icon-gas { background: rgba(245, 158, 11, 0.12); color: #d97706; }
+
+.payment-stat-copy { overflow: hidden; }
+
+.payments-empty-state {
+  min-height: 220px;
+  padding: 32px 24px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(145deg, #ffffff, rgba(53, 208, 127, 0.05));
+  text-align: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.payments-empty-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(53, 208, 127, 0.12);
+  color: var(--celo-green-dark);
+  margin-bottom: 12px;
+}
+
+.payments-empty-state h3 { margin: 0; color: var(--text-primary); font-size: 16px; }
+.payments-empty-state p { margin: 6px 0 0; font-size: 13px; }
+
 @media (max-width: 768px) {
   .top-navbar {
     padding: 10px 14px;
@@ -1719,6 +1787,28 @@ i[data-lucide], svg.lucide {
   .mobile-payments-cards-list {
     display: flex !important;
   }
+
+  .payments-page-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .payments-page-header h1 { font-size: 21px !important; }
+  .payments-page-header .description { font-size: 12px; max-width: 210px; }
+  .payments-page-header .btn { padding: 6px 9px; }
+
+  .payments-stats-grid { gap: 8px; }
+  .payment-stat-card {
+    min-height: 86px;
+    padding: 10px 8px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+  }
+  .payment-stat-icon { width: 30px; height: 30px; border-radius: 9px; }
+  .payment-stat-icon .icon-md { width: 15px; height: 15px; }
+  .payment-stat-copy > div:first-child { font-size: 9px !important; line-height: 1.2; }
+  .payment-stat-copy > div:last-child { font-size: 13px !important; white-space: nowrap; }
+  .payments-empty-state { min-height: 250px; padding: 32px 20px; }
 }
 
 /* Payment Mobile Item Card */
@@ -1743,6 +1833,15 @@ i[data-lucide], svg.lucide {
   font-size: 18px;
   font-weight: 800;
   color: var(--celo-green-dark);
+}
+
+.pmc-wallet-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pmc-row {
@@ -2049,9 +2148,13 @@ body.in-auth-mode .container {
   }
 }
 
-.is-spinning,
 .icon-spin,
 .spin-anim {
+  animation: spin 0.8s linear infinite !important;
+}
+
+button.is-spinning > svg,
+button.is-spinning > i {
   animation: spin 0.8s linear infinite !important;
 }
 
@@ -2096,6 +2199,3 @@ body.in-auth-mode .container {
     padding-bottom: 4px;
   }
 }
-
-
-

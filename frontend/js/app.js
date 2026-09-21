@@ -879,8 +879,7 @@ const app = (function () {
 
   async function loadDashboardData() {
     const refreshBtn = document.getElementById('btn-dash-refresh');
-    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
-    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+    if (refreshBtn) refreshBtn.classList.add('is-spinning');
 
     try {
       if (state.user) {
@@ -889,7 +888,7 @@ const app = (function () {
       }
       await Promise.all([loadWallets(), loadReceivingWallets()]);
     } finally {
-      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
   }
 
@@ -1011,8 +1010,7 @@ const app = (function () {
 
   async function loadWallets() {
     const refreshBtn = document.getElementById('btn-wallets-refresh');
-    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
-    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+    if (refreshBtn) refreshBtn.classList.add('is-spinning');
 
     try {
       const data = await apiRequest('/api/wallets');
@@ -1095,7 +1093,7 @@ const app = (function () {
     } catch (err) {
       showToast('Failed to load wallets: ' + err.message, 'error');
     } finally {
-      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
   }
 
@@ -2043,8 +2041,17 @@ const app = (function () {
     const pkInput = document.getElementById('import-private-key');
     const labelInput = document.getElementById('import-wallet-label');
     if (pkInput) pkInput.value = '';
-    if (labelInput) labelInput.value = '';
+    if (labelInput) labelInput.value = getNextWalletName();
     renderIcons();
+  }
+
+  function getNextWalletName() {
+    const highestNumber = (state.wallets || []).reduce((highest, wallet) => {
+      const name = wallet.wallet_name || wallet.name || wallet.label || '';
+      const match = /^wallet\s+(\d+)$/i.exec(name.trim());
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0);
+    return `Wallet ${highestNumber + 1}`;
   }
 
   async function handleConnectInBrowserWallet() {
@@ -2111,8 +2118,7 @@ const app = (function () {
       btn.innerHTML = '<i data-lucide="loader-2" class="icon-sm" style="animation:spin 1s linear infinite;"></i> Encrypting & Importing...';
       renderIcons();
 
-      const nextNum = (state.wallets?.length || 0) + 1;
-      const walletName = name || `Imported Wallet ${nextNum}`;
+      const walletName = name || getNextWalletName();
 
       const res = await apiRequest('/api/wallets/import', {
         method: 'POST',
@@ -2149,7 +2155,8 @@ const app = (function () {
       if (toDelete && toDelete.address) {
         removeWalletFromDeviceVault(toDelete.address);
       }
-      showToast('Wallet removed.', 'success');
+      const walletName = toDelete?.wallet_name || toDelete?.name || toDelete?.label || 'Wallet';
+      showToast(`${walletName} deleted.`, 'success');
       await loadWallets();
     } catch (err) {
       showToast(err.message, 'error');
@@ -2162,10 +2169,9 @@ const app = (function () {
     const tbody = document.getElementById('payments-table-body');
     const mobileContainer = document.getElementById('payments-mobile-cards-container');
     const refreshBtn = document.getElementById('btn-payments-refresh');
-    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
-    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+    if (refreshBtn) refreshBtn.classList.add('is-spinning');
     if (!tbody) {
-      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
       return;
     }
 
@@ -2198,10 +2204,13 @@ const app = (function () {
         `;
         if (mobileContainer) {
           mobileContainer.innerHTML = `
-            <div class="card" style="text-align:center; padding:32px; color:var(--text-muted);">
-              No payment transactions recorded yet.
+            <div class="payments-empty-state">
+              <div class="payments-empty-icon"><i data-lucide="receipt-text" class="icon-lg"></i></div>
+              <h3>No payments yet</h3>
+              <p>Completed payments and receipts will appear here.</p>
             </div>
           `;
+          renderIcons();
         }
         return;
       }
@@ -2216,46 +2225,22 @@ const app = (function () {
         const isPending = (pStatus === 'PROCESSING' || pStatus === 'PENDING' || pStatus === 'AWAITING_USER_SIGNATURE');
 
         let statusBadge = '<span class="badge badge-warning">PROCESSING</span>';
-        let actionCol = '<span style="color:var(--text-muted);">-</span>';
-        let mobileCancelBtn = '';
-
         if (pStatus === 'SUCCESS' || pStatus === 'CONFIRMED') {
           statusBadge = '<span class="badge badge-green">SUCCESS</span>';
         } else if (pStatus === 'CANCELLED') {
           statusBadge = '<span class="badge" style="background:var(--bg-subtle); color:var(--text-muted); border:1px solid var(--border-color);">CANCELLED</span>';
         } else if (pStatus === 'FAILED') {
-          const payId = p.payment_id || p.id;
           statusBadge = '<span class="badge badge-danger">FAILED</span>';
-          actionCol = `
-            <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel/Dismiss this failed transaction">
-              <i data-lucide="x-circle" class="icon-xs"></i>
-              <span>Cancel</span>
-            </button>
-          `;
-          mobileCancelBtn = `
-            <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
-              <i data-lucide="x-circle" class="icon-xs"></i>
-              <span>Cancel Failed Transaction</span>
-            </button>
-          `;
         } else if (isPending) {
-          const payId = p.payment_id || p.id;
           statusBadge = hasTxHash
             ? '<span class="badge badge-warning" title="Transaction broadcasted on-chain">PROCESSING</span>'
             : '<span class="badge badge-warning" title="Pending execution">PENDING</span>';
-          actionCol = `
-            <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel this pending transaction">
-              <i data-lucide="x-circle" class="icon-xs"></i>
-              <span>Cancel</span>
-            </button>
-          `;
-          mobileCancelBtn = `
-            <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
-              <i data-lucide="x-circle" class="icon-xs"></i>
-              <span>Cancel Pending Transaction</span>
-            </button>
-          `;
         }
+
+        const sourceWallet = (state.wallets || []).find(
+          (wallet) => wallet.address && p.from_address && wallet.address.toLowerCase() === p.from_address.toLowerCase()
+        );
+        const walletName = p.wallet_name || sourceWallet?.wallet_name || sourceWallet?.name || sourceWallet?.label || 'Wallet';
 
         const txLink = p.tx_hash
           ? `<a href="${CELO_EXPLORER_BASE}${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:4px;">
@@ -2273,6 +2258,7 @@ const app = (function () {
         // Desktop Table Row
         tableHtml += `
           <tr>
+            <td style="font-weight:700;">${escapeHtml(walletName)}</td>
             <td>${statusBadge}</td>
             <td style="font-weight:700; color:var(--celo-green-dark);">${amtStr} USDT</td>
             <td><span class="code-address">${formatShortAddress(p.from_address)}</span></td>
@@ -2280,7 +2266,6 @@ const app = (function () {
             <td>${txLink}</td>
             <td>${gasFundedBadge}</td>
             <td style="font-size:12px; color:var(--text-muted);">${dateStr}</td>
-            <td>${actionCol}</td>
           </tr>
         `;
 
@@ -2288,9 +2273,10 @@ const app = (function () {
         mobileHtml += `
           <div class="payment-mobile-card">
             <div class="pmc-header">
-              <span class="pmc-amount">${amtStr} USDT</span>
+              <span class="pmc-wallet-name">${escapeHtml(walletName)}</span>
               ${statusBadge}
             </div>
+            <div class="pmc-amount">${amtStr} USDT</div>
             <div class="pmc-row">
               <span class="pmc-label">From:</span>
               <span class="pmc-value">
@@ -2311,7 +2297,6 @@ const app = (function () {
               <span class="pmc-label">Date:</span>
               <span style="font-size:11px; color:var(--text-muted);">${dateStr}</span>
             </div>
-            ${mobileCancelBtn}
             ${p.tx_hash ? `
             <div class="pmc-footer">
               <a href="${CELO_EXPLORER_BASE}${p.tx_hash}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none;">
@@ -2334,7 +2319,7 @@ const app = (function () {
     } catch (err) {
       showToast('Failed to load history: ' + err.message, 'error');
     } finally {
-      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
   }
 
@@ -2460,8 +2445,7 @@ const app = (function () {
 
   async function loadAdminOverview() {
     const refreshBtn = document.getElementById('btn-admin-refresh');
-    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
-    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+    if (refreshBtn) refreshBtn.classList.add('is-spinning');
 
     try {
       const [dash, funding] = await Promise.all([
@@ -2483,7 +2467,7 @@ const app = (function () {
     } catch (err) {
       // Non-blocking error
     } finally {
-      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
   }
 
