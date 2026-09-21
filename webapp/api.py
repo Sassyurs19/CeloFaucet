@@ -1221,6 +1221,44 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     })
 
 
+async def api_get_wallet_payment_history(request: web.Request) -> web.Response:
+    """Return all recorded transactions for one wallet owned by the current user."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        wallet_id = int(request.match_info["id"])
+    except (KeyError, TypeError, ValueError):
+        return web.json_response({"error": "Invalid wallet ID."}, status=400)
+
+    wallet = await db.get_user_wallet_by_id(wallet_id, user_id)
+    if not wallet:
+        return web.json_response({"error": "Wallet not found or unauthorized."}, status=404)
+
+    payments = await db.get_wallet_payment_history(user_id, wallet["address"])
+    formatted = [{
+        "id": payment["id"],
+        "payment_id": payment.get("payment_id") or str(payment["id"]),
+        "amount": payment.get("amount_usat", "2.00"),
+        "from_address": payment.get("from_address"),
+        "to_address": payment.get("to_address"),
+        "status": payment.get("status"),
+        "tx_hash": payment.get("tx_hash"),
+        "created_at": payment.get("created_at"),
+    } for payment in payments]
+
+    return web.json_response({
+        "wallet": {
+            "id": wallet["id"],
+            "name": wallet["wallet_name"],
+            "address": wallet["address"],
+        },
+        "payments": formatted,
+        "total_count": len(formatted),
+    })
+
+
 async def api_cancel_payment(request: web.Request) -> web.Response:
     """Cancel a pending/processing payment if funds have not been debited."""
     user_id = get_user_id_from_request(request)
@@ -1770,6 +1808,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/wallets", api_get_wallets)
     app.router.add_post("/api/wallets/connect", api_connect_wallet)
     app.router.add_post("/api/wallets/import", api_import_wallet)
+    app.router.add_get("/api/wallets/{id}/payments", api_get_wallet_payment_history)
     app.router.add_patch("/api/wallets/{id}", api_rename_wallet)
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
     app.router.add_post("/api/wallets/{id}/fill-celo", api_fill_wallet_celo)

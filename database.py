@@ -1182,6 +1182,23 @@ class Database:
                 row = await cur.fetchone()
                 return row["cnt"] if row else 0
 
+    async def get_wallet_payment_history(self, user_identifier: int, wallet_address: str) -> list[dict[str, Any]]:
+        """Return the complete recorded payment history for one owned wallet, oldest first."""
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        placeholders = ",".join("?" * len(user_ids))
+        async with self.connect() as conn:
+            async with conn.execute(
+                f"""
+                SELECT * FROM usat_payments
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND LOWER(from_address) = LOWER(?)
+                ORDER BY created_at ASC, id ASC;
+                """,
+                user_ids + user_ids + [wallet_address],
+            ) as cur:
+                rows = await cur.fetchall()
+                return [dict(row) for row in rows]
+
     async def get_user_total_paid(self, user_identifier: int) -> float:
         """Calculate total USAT paid by user in successful transactions."""
         async with self.connect() as conn:

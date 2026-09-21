@@ -22,6 +22,7 @@ const app = (function () {
     payments: [],
     isSubmitting: false,
     activePayment: null,
+    walletGridColumns: 2,
   };
 
   let searchDebounceTimers = {};
@@ -1742,6 +1743,8 @@ const app = (function () {
     const container = document.getElementById('wallets-list-container');
     if (!container) return;
 
+    applyWalletGridColumns();
+
     if (state.wallets.length === 0) {
       container.innerHTML = `
         <div class="card" style="text-align:center; padding:36px 20px; grid-column: 1 / -1;">
@@ -1779,7 +1782,7 @@ const app = (function () {
       const isSelected = state.selectedWalletId === w.id;
 
       html += `
-        <div class="wallet-card ${isSelected ? 'active-wallet' : ''}">
+        <div class="wallet-card ${isSelected ? 'active-wallet' : ''}" onclick="app.openWalletHistory(${w.id}, event)" title="View this wallet's transaction history">
           <div class="wallet-card-header">
             <div style="min-width:0; flex:1;">
               <div style="display:flex; align-items:center; gap:6px;">
@@ -1870,6 +1873,85 @@ const app = (function () {
 
     if (dropdown && !wasOpen) {
       dropdown.classList.add('open');
+    }
+  }
+
+  function applyWalletGridColumns() {
+    const container = document.getElementById('wallets-list-container');
+    const columns = [1, 2, 3].includes(Number(state.walletGridColumns)) ? Number(state.walletGridColumns) : 2;
+    state.walletGridColumns = columns;
+    if (container) container.setAttribute('data-columns', String(columns));
+    document.querySelectorAll('.wallet-layout-option').forEach((button) => {
+      button.classList.toggle('active', Number(button.dataset.walletColumns) === columns);
+    });
+  }
+
+  function setWalletGridColumns(columns) {
+    state.walletGridColumns = [1, 2, 3].includes(Number(columns)) ? Number(columns) : 2;
+    try {
+      localStorage.setItem('celo_wallet_grid_columns', String(state.walletGridColumns));
+    } catch (e) {}
+    applyWalletGridColumns();
+  }
+
+  async function openWalletHistory(walletId, event) {
+    if (event?.target?.closest?.('button, a, input, select, textarea')) return;
+
+    const wallet = state.wallets.find((item) => String(item.id) === String(walletId));
+    if (!wallet) return;
+
+    const title = document.getElementById('wallet-history-title');
+    const address = document.getElementById('wallet-history-address');
+    const content = document.getElementById('wallet-history-content');
+    if (title) title.textContent = `${wallet.name || wallet.label || 'Wallet'} History`;
+    if (address) address.textContent = wallet.address || '';
+    if (content) {
+      content.innerHTML = '<div class="wallet-history-entry" style="text-align:center; color:var(--text-muted);">Loading transaction history…</div>';
+    }
+    openModal('modal-wallet-history');
+
+    try {
+      const data = await apiRequest(`/api/wallets/${walletId}/payments`);
+      const payments = data.payments || [];
+      if (!content) return;
+      if (payments.length === 0) {
+        content.innerHTML = '<div class="wallet-history-entry" style="text-align:center; color:var(--text-muted);">No transactions recorded for this wallet yet.</div>';
+        return;
+      }
+
+      content.innerHTML = payments.map((payment) => {
+        const amount = Number.parseFloat(payment.amount || 0).toFixed(2);
+        const status = String(payment.status || 'PENDING').toUpperCase();
+        const statusClass = status === 'SUCCESS' || status === 'CONFIRMED'
+          ? 'badge-green'
+          : status === 'FAILED' ? 'badge-danger' : 'badge-warning';
+        const when = payment.created_at
+          ? new Date(payment.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+          : '-';
+        const transaction = payment.tx_hash
+          ? `<a href="${CELO_EXPLORER_BASE}${payment.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none; font-weight:700;">${formatShortAddress(payment.tx_hash)}</a>`
+          : '<span>-</span>';
+        return `
+          <div class="wallet-history-entry">
+            <div class="wallet-history-entry-top">
+              <strong>${amount} USDT</strong>
+              <span class="badge ${statusClass}">${escapeHtml(status)}</span>
+            </div>
+            <div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">
+              To: <span class="code-address">${escapeHtml(formatShortAddress(payment.to_address))}</span>
+            </div>
+            <div class="wallet-history-entry-bottom">
+              <span>${escapeHtml(when)}</span>
+              <span>${transaction}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+      renderIcons();
+    } catch (err) {
+      if (content) {
+        content.innerHTML = `<div class="wallet-history-entry" style="text-align:center; color:var(--danger);">Unable to load history: ${escapeHtml(err.message)}</div>`;
+      }
     }
   }
 
@@ -2785,6 +2867,11 @@ const app = (function () {
 
   function init() {
     // Check existing session
+    try {
+      const storedColumns = Number(localStorage.getItem('celo_wallet_grid_columns'));
+      if ([1, 2, 3].includes(storedColumns)) state.walletGridColumns = storedColumns;
+    } catch (e) {}
+    applyWalletGridColumns();
     checkSession();
     renderIcons();
 
@@ -2861,6 +2948,8 @@ const app = (function () {
     handleConnectInBrowserWallet,
     submitImportWallet,
     handleDeleteWallet,
+    setWalletGridColumns,
+    openWalletHistory,
     loadPaymentsHistory,
     loadProfile,
     loadAdminView,

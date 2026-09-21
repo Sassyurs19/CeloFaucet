@@ -405,7 +405,13 @@
                 <span id="wallets-summary-count" style="font-weight:700;">0</span> wallets connected for checkout & payments
               </p>
             </div>
-            <div style="display:flex; gap:8px;">
+            <div class="wallets-header-actions">
+              <div class="wallet-layout-picker" role="group" aria-label="Wallet grid layout">
+                <span class="wallet-layout-label">Layout</span>
+                <button type="button" class="wallet-layout-option" data-wallet-columns="1" onclick="app.setWalletGridColumns(1)" title="One column">1</button>
+                <button type="button" class="wallet-layout-option" data-wallet-columns="2" onclick="app.setWalletGridColumns(2)" title="Two columns">2</button>
+                <button type="button" class="wallet-layout-option" data-wallet-columns="3" onclick="app.setWalletGridColumns(3)" title="Three columns">3</button>
+              </div>
               <button class="btn btn-secondary btn-sm" id="btn-wallets-refresh" onclick="app.loadWallets()" title="Refresh balances">
                 <i data-lucide="refresh-cw" class="icon-sm"></i>
                 <span>Refresh</span>
@@ -1096,6 +1102,24 @@
           <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-rename-wallet')">Cancel</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL 6: WALLET TRANSACTION HISTORY
+       ========================================================= -->
+  <div id="modal-wallet-history" class="modal-overlay">
+    <div class="modal-card wallet-history-modal">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="wallet-history-title">Wallet History</h3>
+          <div id="wallet-history-address" class="wallet-history-address"></div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-wallet-history')">&times;</button>
+      </div>
+      <div id="wallet-history-content" class="wallet-history-content">
+        <!-- Loaded dynamically -->
+      </div>
     </div>
   </div>
 
