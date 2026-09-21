@@ -756,16 +756,43 @@ class Database:
                     return row["cnt"] if row else 0
 
     async def get_admin_funding_history(self, limit: int = 20) -> list[dict[str, Any]]:
-        """Retrieve recent CELO gas funding records."""
+        """Retrieve recent successful CELO fee sends with their receiving wallet details."""
         async with self.connect() as conn:
             async with conn.execute(
                 """
-                SELECT p.id, p.payment_id, p.user_id, p.from_address, p.celo_fund_tx_hash,
-                       p.created_at, u.full_name
+                SELECT p.id AS record_id, p.payment_id, p.user_id,
+                       p.from_address AS wallet_address,
+                       COALESCE((
+                           SELECT w.wallet_name
+                           FROM user_wallets w
+                           WHERE LOWER(w.address) = LOWER(p.from_address)
+                             AND (w.user_id = p.user_id OR w.telegram_id = p.telegram_id)
+                           ORDER BY w.id DESC LIMIT 1
+                       ), 'Wallet') AS wallet_name,
+                       u.full_name, p.celo_fund_tx_hash AS funding_tx_hash,
+                       p.created_at, 'Automatic payment fee' AS fee_type
                 FROM usat_payments p
                 LEFT JOIN users u ON (p.user_id = u.id OR p.telegram_id = u.telegram_id)
-                WHERE p.celo_funded = 1
-                ORDER BY p.id DESC
+                WHERE p.celo_funded = 1 AND p.celo_fund_tx_hash IS NOT NULL
+
+                UNION ALL
+
+                SELECT c.id AS record_id, c.request_id AS payment_id, NULL AS user_id,
+                       c.destination_address AS wallet_address,
+                       COALESCE((
+                           SELECT w.wallet_name
+                           FROM user_wallets w
+                           WHERE LOWER(w.address) = LOWER(c.destination_address)
+                             AND w.telegram_id = c.telegram_id
+                           ORDER BY w.id DESC LIMIT 1
+                       ), 'Wallet') AS wallet_name,
+                       u.full_name, c.tx_hash AS funding_tx_hash,
+                       c.created_at, 'Manual fee refill' AS fee_type
+                FROM claims c
+                LEFT JOIN users u ON u.telegram_id = c.telegram_id
+                WHERE c.status = 'SUCCESS' AND c.tx_hash IS NOT NULL
+
+                ORDER BY created_at DESC
                 LIMIT ?;
                 """,
                 (limit,),

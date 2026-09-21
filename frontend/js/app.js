@@ -2391,47 +2391,6 @@ const app = (function () {
     }, 300);
   }
 
-  function triggerAdminPaymentsFilter() {
-    loadAdminPayments();
-  }
-
-  function setAdminDatePreset(preset) {
-    const dateInput = document.getElementById('admin-payments-date');
-    if (!dateInput) return;
-    if (preset === 'today') {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      dateInput.value = `${year}-${month}-${day}`;
-    }
-    loadAdminPayments();
-  }
-
-  function resetAdminPaymentsFilter() {
-    const searchInput = document.getElementById('admin-payments-search');
-    const dateInput = document.getElementById('admin-payments-date');
-    const fromInput = document.getElementById('admin-payments-time-from');
-    const toInput = document.getElementById('admin-payments-time-to');
-    if (searchInput) searchInput.value = '';
-    if (dateInput) dateInput.value = '';
-    if (fromInput) fromInput.value = '';
-    if (toInput) toInput.value = '';
-    state.adminPaymentStatusFilter = '';
-    document.querySelectorAll('.filter-pill').forEach((p) => {
-      p.classList.toggle('active', p.getAttribute('data-status') === '');
-    });
-    loadAdminPayments();
-  }
-
-  function setAdminPaymentStatusFilter(status) {
-    state.adminPaymentStatusFilter = status;
-    document.querySelectorAll('.filter-pill').forEach((p) => {
-      p.classList.toggle('active', p.getAttribute('data-status') === status);
-    });
-    loadAdminPayments();
-  }
-
   async function loadAdminPayments() {
     const container = document.getElementById('admin-payments-card-list');
     const summaryText = document.getElementById('admin-filter-summary-text');
@@ -2439,34 +2398,15 @@ const app = (function () {
     if (!container) return;
 
     const searchInput = document.getElementById('admin-payments-search');
-    const dateInput = document.getElementById('admin-payments-date');
-    const fromInput = document.getElementById('admin-payments-time-from');
-    const toInput = document.getElementById('admin-payments-time-to');
-
     const search = searchInput ? searchInput.value.trim() : '';
-    const dateVal = dateInput ? dateInput.value.trim() : '';
-    const timeFrom = fromInput ? fromInput.value.trim() : '';
-    const timeTo = toInput ? toInput.value.trim() : '';
-    const status = state.adminPaymentStatusFilter || '';
-
-    // Build filter label
-    let filterBadges = [];
-    if (search) filterBadges.push(`Search: "${search}"`);
-    if (dateVal) filterBadges.push(`Date: ${dateVal}`);
-    if (timeFrom || timeTo) filterBadges.push(`Time: ${timeFrom || '00:00'} - ${timeTo || '23:59'}`);
-    if (status) filterBadges.push(`Status: ${status}`);
 
     if (windowLabel) {
-      windowLabel.textContent = filterBadges.length > 0 ? filterBadges.join(' | ') : 'All records';
+      windowLabel.textContent = search ? `Search: "${search}"` : 'All records';
     }
 
     try {
       const queryParams = new URLSearchParams();
       if (search) queryParams.append('search', search);
-      if (status) queryParams.append('status', status);
-      if (dateVal) queryParams.append('date', dateVal);
-      if (timeFrom) queryParams.append('time_from', timeFrom);
-      if (timeTo) queryParams.append('time_to', timeTo);
 
       const data = await apiRequest(`/api/admin/payments?${queryParams.toString()}`);
       const payments = data.payments || [];
@@ -2484,7 +2424,7 @@ const app = (function () {
           <div class="card" style="text-align:center; padding:32px 16px; color:var(--text-muted);">
             <i data-lucide="inbox" class="icon-lg" style="margin-bottom:8px;"></i>
             <div style="font-weight:600; font-size:14px;">No matching transactions found</div>
-            <div style="font-size:12px; margin-top:4px;">Try searching a different name, or clear time/date filters.</div>
+            <div style="font-size:12px; margin-top:4px;">Try a different search.</div>
           </div>
         `;
         renderIcons();
@@ -2670,25 +2610,33 @@ const app = (function () {
 
   async function loadAdminFunding() {
     try {
-      const [funding, hist] = await Promise.all([
+      const [fundingResult, historyResult] = await Promise.allSettled([
         apiRequest('/api/admin/funding'),
         apiRequest('/api/admin/funding/transactions'),
       ]);
+      const funding = fundingResult.status === 'fulfilled' ? fundingResult.value : null;
+      const hist = historyResult.status === 'fulfilled' ? historyResult.value : { transactions: [] };
 
       const balEl = document.getElementById('admin-funding-balance');
       const givenEl = document.getElementById('admin-funding-given');
 
-      const fundingAddr = funding.funding_address || funding.funding_wallet || '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b';
-      let liveCelo = parseFloat(funding.celo_balance || funding.balance_celo || 0);
-      try {
-        const onChain = await fetchOnChainBalances(fundingAddr);
-        if (onChain.celo > 0) {
-          liveCelo = onChain.celo;
+      let liveCelo = funding ? parseFloat(funding.celo_balance || funding.balance_celo) : NaN;
+      const fundingAddr = funding?.funding_address || funding?.funding_wallet;
+      if (fundingAddr) {
+        try {
+          const onChain = await fetchOnChainBalances(fundingAddr);
+          if (onChain.celo > 0) {
+            liveCelo = onChain.celo;
+          }
+        } catch (e) {
+          // The server-provided balance remains the fallback when available.
         }
-      } catch (e) {}
+      }
 
-      if (balEl) balEl.textContent = `${liveCelo.toFixed(4)} CELO`;
-      if (givenEl) givenEl.textContent = funding.total_subsidies_given !== undefined ? funding.total_subsidies_given : (funding.total_subsidies || 0);
+      if (balEl) balEl.textContent = Number.isFinite(liveCelo) ? `${liveCelo.toFixed(4)} CELO` : 'Unavailable';
+      if (givenEl && funding) {
+        givenEl.textContent = funding.total_subsidies_given !== undefined ? funding.total_subsidies_given : (funding.total_subsidies || 0);
+      }
 
       const container = document.getElementById('admin-funding-card-list');
       if (container) {
@@ -2704,29 +2652,46 @@ const app = (function () {
 
         let html = '';
         txs.forEach((t) => {
+          const walletName = t.wallet_name || 'Wallet';
+          const walletAddress = t.wallet_address || t.from_address || '';
+          const sentAt = t.created_at
+            ? new Date(t.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+            : '-';
+          const transaction = t.funding_tx_hash
+            ? `<a href="${CELO_EXPLORER_BASE}${t.funding_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none;">
+                 ${formatShortAddress(t.funding_tx_hash)}
+               </a>`
+            : '<span style="color:var(--text-muted);">-</span>';
           html += `
             <div class="admin-card-item">
               <div class="admin-card-top">
                 <div>
-                  <div style="font-weight:700; font-size:14px;">User: ${escapeHtml(t.user_name || t.full_name || 'User')}</div>
-                  <div style="font-size:12px; color:var(--text-muted);">Recipient: <span class="code-address">${formatShortAddress(t.recipient_wallet)}</span></div>
+                  <div style="font-weight:700; font-size:14px;">${escapeHtml(walletName)}</div>
+                  <div style="font-size:12px; color:var(--text-muted);">${escapeHtml(t.full_name || 'Account')} &middot; ${escapeHtml(t.fee_type || 'CELO fee')}</div>
                 </div>
                 <div style="font-size:13px; font-weight:700; color:var(--celo-green-dark);">+0.05 CELO</div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">
+                Wallet address: <span class="code-address">${formatShortAddress(walletAddress)}</span>
               </div>
               <div class="admin-card-footer">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span style="color:var(--text-muted);">Tx:</span>
-                  <a href="${CELO_EXPLORER_BASE}${t.funding_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none;">
-                    ${formatShortAddress(t.funding_tx_hash)}
-                  </a>
+                  ${transaction}
                 </div>
-                <div>${t.created_at || '-'}</div>
+                <div>${sentAt}</div>
               </div>
             </div>
           `;
         });
         container.innerHTML = html;
         renderIcons();
+      }
+
+      if (historyResult.status === 'rejected') {
+        showToast('Failed to load CELO fee history: ' + historyResult.reason.message, 'error');
+      } else if (fundingResult.status === 'rejected') {
+        showToast('Funding balance is temporarily unavailable. Fee history is still shown.', 'warning');
       }
     } catch (err) {
       showToast('Failed to load funding: ' + err.message, 'error');
@@ -2904,10 +2869,6 @@ const app = (function () {
     adminResetAllData,
     switchAdminTab,
     debounceAdminSearch,
-    triggerAdminPaymentsFilter,
-    setAdminDatePreset,
-    resetAdminPaymentsFilter,
-    setAdminPaymentStatusFilter,
     openAddReceivingModal,
     submitAddReceivingWallet,
     toggleReceivingActive,

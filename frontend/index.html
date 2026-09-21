@@ -671,50 +671,11 @@
                  TAB 1: PAYMENTS & SMART SEARCH/FILTER
                  ========================================== -->
             <div id="admin-tab-payments" class="admin-tab-content">
-              <!-- Smart Filter & Search Box -->
+              <!-- Payment Search -->
               <div class="admin-filter-panel">
-                <!-- Search row -->
-                <div class="form-group" style="margin-bottom:10px;">
-                  <div class="search-box" style="margin-bottom:0;">
-                    <i data-lucide="search" class="icon-sm search-icon"></i>
-                    <input type="text" id="admin-payments-search" class="form-input" placeholder="Search by name (e.g. Poornima), phone, address, or tx..." oninput="app.debounceAdminSearch('payments')">
-                  </div>
-                </div>
-
-                <!-- Date & Time Range Grid -->
-                <div class="filter-row-grid">
-                  <div>
-                    <div class="filter-input-label">Date Filter</div>
-                    <input type="date" id="admin-payments-date" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
-                  </div>
-                  <div>
-                    <div class="filter-input-label">Time From (e.g. 16:00 / 4 PM)</div>
-                    <input type="time" id="admin-payments-time-from" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
-                  </div>
-                  <div>
-                    <div class="filter-input-label">Time To (e.g. 19:00 / 7 PM)</div>
-                    <input type="time" id="admin-payments-time-to" class="form-input" onchange="app.triggerAdminPaymentsFilter()">
-                  </div>
-                </div>
-
-                <!-- Status Pills & Presets Row -->
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px;">
-                  <div class="filter-pills" style="margin-bottom:0;">
-                    <div class="filter-pill active" data-status="" onclick="app.setAdminPaymentStatusFilter('')">All Status</div>
-                    <div class="filter-pill" data-status="SUCCESS" onclick="app.setAdminPaymentStatusFilter('SUCCESS')">Success</div>
-                    <div class="filter-pill" data-status="FAILED" onclick="app.setAdminPaymentStatusFilter('FAILED')">Failed</div>
-                    <div class="filter-pill" data-status="PROCESSING" onclick="app.setAdminPaymentStatusFilter('PROCESSING')">Processing</div>
-                  </div>
-
-                  <div style="display:flex; gap:6px;">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="app.setAdminDatePreset('today')">
-                      Today
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetAdminPaymentsFilter()">
-                      <i data-lucide="rotate-ccw" class="icon-sm"></i>
-                      <span>Reset</span>
-                    </button>
-                  </div>
+                <div class="search-box" style="margin-bottom:0;">
+                  <i data-lucide="search" class="icon-sm search-icon"></i>
+                  <input type="text" id="admin-payments-search" class="form-input" placeholder="Search by name, phone, address, or transaction..." oninput="app.debounceAdminSearch('payments')">
                 </div>
               </div>
 
@@ -792,7 +753,7 @@
                 </div>
               </div>
 
-              <h4 style="margin:0 0 10px; font-size:14px;">Recent Gas Funding Subsidies</h4>
+              <h4 style="margin:0 0 10px; font-size:14px;">CELO Fee Send History</h4>
               <div class="admin-cards-container" id="admin-funding-card-list">
                 <!-- Loaded dynamically -->
               </div>
