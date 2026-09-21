@@ -868,6 +868,21 @@ i[data-lucide], svg.lucide {
   background: var(--bg-subtle);
 }
 
+.wallet-history-incoming { border-left: 3px solid var(--celo-green); }
+.wallet-history-outgoing { border-left: 3px solid var(--accent-blue); }
+
+.wallet-history-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.wallet-history-incoming .wallet-history-direction { color: var(--celo-green-dark); }
+.wallet-history-outgoing .wallet-history-direction { color: var(--accent-blue); }
+
 .wallet-history-entry-top,
 .wallet-history-entry-bottom {
   display: flex;

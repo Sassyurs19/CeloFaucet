@@ -1238,11 +1238,12 @@ async def api_get_wallet_payment_history(request: web.Request) -> web.Response:
 
     payments = await db.get_wallet_payment_history(user_id, wallet["address"])
     formatted = [{
-        "id": payment["id"],
-        "payment_id": payment.get("payment_id") or str(payment["id"]),
-        "amount": payment.get("amount_usat", "2.00"),
-        "from_address": payment.get("from_address"),
-        "to_address": payment.get("to_address"),
+        "id": payment["record_id"],
+        "direction": payment.get("direction"),
+        "activity_type": payment.get("activity_type"),
+        "amount": payment.get("amount", "0"),
+        "currency": payment.get("currency", "USDT"),
+        "counterparty_address": payment.get("counterparty_address"),
         "status": payment.get("status"),
         "tx_hash": payment.get("tx_hash"),
         "created_at": payment.get("created_at"),

@@ -1921,6 +1921,13 @@ const app = (function () {
 
       content.innerHTML = payments.map((payment) => {
         const amount = Number.parseFloat(payment.amount || 0).toFixed(2);
+        const isIncoming = payment.direction === 'incoming';
+        const currency = payment.currency || 'USDT';
+        const activityLabel = payment.activity_type === 'gas_reward'
+          ? 'CELO gas reward received'
+          : payment.activity_type === 'fee_reward'
+            ? 'CELO fee reward received'
+            : 'USDT payment sent';
         const status = String(payment.status || 'PENDING').toUpperCase();
         const statusClass = status === 'SUCCESS' || status === 'CONFIRMED'
           ? 'badge-green'
@@ -1932,14 +1939,19 @@ const app = (function () {
           ? `<a href="${CELO_EXPLORER_BASE}${payment.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none; font-weight:700;">${formatShortAddress(payment.tx_hash)}</a>`
           : '<span>-</span>';
         return `
-          <div class="wallet-history-entry">
+          <div class="wallet-history-entry ${isIncoming ? 'wallet-history-incoming' : 'wallet-history-outgoing'}">
             <div class="wallet-history-entry-top">
-              <strong>${amount} USDT</strong>
+              <span class="wallet-history-direction">
+                <i data-lucide="${isIncoming ? 'arrow-down-left' : 'arrow-up-right'}" class="icon-sm"></i>
+                ${activityLabel}
+              </span>
+              <strong>${isIncoming ? '+' : '-'}${amount} ${currency}</strong>
               <span class="badge ${statusClass}">${escapeHtml(status)}</span>
             </div>
-            <div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">
-              To: <span class="code-address">${escapeHtml(formatShortAddress(payment.to_address))}</span>
-            </div>
+            ${payment.counterparty_address ? `
+              <div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">
+                To: <span class="code-address">${escapeHtml(formatShortAddress(payment.counterparty_address))}</span>
+              </div>` : ''}
             <div class="wallet-history-entry-bottom">
               <span>${escapeHtml(when)}</span>
               <span>${transaction}</span>

@@ -1183,18 +1183,64 @@ class Database:
                 return row["cnt"] if row else 0
 
     async def get_wallet_payment_history(self, user_identifier: int, wallet_address: str) -> list[dict[str, Any]]:
-        """Return the complete recorded payment history for one owned wallet, oldest first."""
+        """Return recorded sends and CELO rewards for one owned wallet, oldest first."""
         user_ids = await self._resolve_user_identifiers(user_identifier)
         placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
             async with conn.execute(
                 f"""
-                SELECT * FROM usat_payments
+                SELECT p.id AS record_id,
+                       'outgoing' AS direction,
+                       'payment' AS activity_type,
+                       CAST(p.amount_usat AS TEXT) AS amount,
+                       'USDT' AS currency,
+                       p.to_address AS counterparty_address,
+                       p.status AS status,
+                       p.tx_hash AS tx_hash,
+                       p.created_at AS created_at
+                FROM usat_payments p
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND LOWER(from_address) = LOWER(?)
-                ORDER BY created_at ASC, id ASC;
+                  AND LOWER(p.from_address) = LOWER(?)
+
+                UNION ALL
+
+                SELECT p.id AS record_id,
+                       'incoming' AS direction,
+                       'gas_reward' AS activity_type,
+                       CAST(? AS TEXT) AS amount,
+                       'CELO' AS currency,
+                       '' AS counterparty_address,
+                       'SUCCESS' AS status,
+                       p.celo_fund_tx_hash AS tx_hash,
+                       p.created_at AS created_at
+                FROM usat_payments p
+                WHERE (p.user_id IN ({placeholders}) OR p.telegram_id IN ({placeholders}))
+                  AND LOWER(p.from_address) = LOWER(?)
+                  AND p.celo_funded = 1
+                  AND p.celo_fund_tx_hash IS NOT NULL
+
+                UNION ALL
+
+                SELECT c.id AS record_id,
+                       'incoming' AS direction,
+                       'fee_reward' AS activity_type,
+                       CAST(c.amount AS TEXT) AS amount,
+                       'CELO' AS currency,
+                       '' AS counterparty_address,
+                       c.status AS status,
+                       c.tx_hash AS tx_hash,
+                       c.created_at AS created_at
+                FROM claims c
+                WHERE c.telegram_id IN ({placeholders})
+                  AND LOWER(c.destination_address) = LOWER(?)
+                  AND c.status = 'SUCCESS'
+                  AND c.tx_hash IS NOT NULL
+                ORDER BY created_at ASC, record_id ASC;
                 """,
-                user_ids + user_ids + [wallet_address],
+                [str(config.celo_funding_amount)]
+                + user_ids + user_ids + [wallet_address]
+                + user_ids + user_ids + [wallet_address]
+                + user_ids + [wallet_address],
             ) as cur:
                 rows = await cur.fetchall()
                 return [dict(row) for row in rows]
