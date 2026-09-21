@@ -101,6 +101,44 @@ def mask_mobile(mobile: str | None) -> str:
     return f"{prefix} ******{suffix}"
 
 
+def set_browser_session_cookie(response: web.Response, session_token: str, *, max_age: int) -> None:
+    """Set the durable cross-site session cookie used by Firebase Hosting.
+
+    The frontend and API are on different registrable domains. ``Partitioned``
+    lets modern mobile browsers retain this Secure, HttpOnly cookie in the
+    Firebase site's partition instead of treating it as a blocked third-party
+    cookie. Browsers that do not implement it safely ignore the attribute.
+    """
+    secure = config.frontend_url.startswith("https://")
+    same_site = "None" if secure else "Lax"
+    attributes = [
+        f"usat_session={session_token}",
+        f"Max-Age={max_age}",
+        "Path=/",
+        "HttpOnly",
+        f"SameSite={same_site}",
+    ]
+    if secure:
+        attributes.extend(["Secure", "Partitioned"])
+    response.headers.add("Set-Cookie", "; ".join(attributes))
+
+
+def clear_browser_session_cookie(response: web.Response, cookie_name: str) -> None:
+    """Clear both the cross-site cookie attributes and its server-side state."""
+    secure = config.frontend_url.startswith("https://")
+    same_site = "None" if secure else "Lax"
+    attributes = [
+        f"{cookie_name}=",
+        "Max-Age=0",
+        "Path=/",
+        "HttpOnly",
+        f"SameSite={same_site}",
+    ]
+    if secure:
+        attributes.extend(["Secure", "Partitioned"])
+    response.headers.add("Set-Cookie", "; ".join(attributes))
+
+
 # =========================================================================
 # 1. AUTHENTICATION & USER REGISTRATION (NO OTP/SMS VERIFICATION)
 # =========================================================================
@@ -197,8 +235,7 @@ async def api_register(request: web.Request) -> web.Response:
             "registered": True,
         }
     })
-    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=True,
-                    secure=config.frontend_url.startswith("https://"), samesite="None" if config.frontend_url.startswith("https://") else "Lax")
+    set_browser_session_cookie(resp, session_token, max_age=86400 * 30)
     return resp
 
 
@@ -304,8 +341,7 @@ async def api_login(request: web.Request) -> web.Response:
             "registered": True,
         }
     })
-    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=True,
-                    secure=config.frontend_url.startswith("https://"), samesite="None" if config.frontend_url.startswith("https://") else "Lax")
+    set_browser_session_cookie(resp, session_token, max_age=86400 * 30)
     return resp
 
 
@@ -325,8 +361,8 @@ async def api_logout(request: web.Request) -> web.Response:
         await db.invalidate_session(admin_token)
 
     resp = web.json_response({"success": True, "message": "Logged out successfully."})
-    resp.del_cookie("usat_session")
-    resp.del_cookie("admin_session")
+    clear_browser_session_cookie(resp, "usat_session")
+    clear_browser_session_cookie(resp, "admin_session")
     return resp
 
 
