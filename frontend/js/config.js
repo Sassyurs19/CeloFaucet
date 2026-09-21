@@ -5,7 +5,7 @@
  * by setting window.API_BASE_URL before this script runs during deployment.
  *
  * Example:
- * window.API_BASE_URL = "https://celo-usdt-backend.onrender.com";
+ * window.API_BASE_URL = "https://celofaucet.onrender.com";
  */
 (function () {
   const isFile = typeof window !== 'undefined' && window.location.protocol === 'file:';
@@ -16,7 +16,7 @@
   );
 
   // Render service configured in render.yaml
-  const defaultProductionBackend = 'https://celo-faucet-backend.onrender.com';
+  const defaultProductionBackend = 'https://celofaucet.onrender.com';
   let targetUrl = '';
   if (isFile) {
     targetUrl = 'http://localhost:8080';
