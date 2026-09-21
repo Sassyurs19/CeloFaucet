@@ -28,22 +28,20 @@ class WalletManager:
     def _initialize_account(self) -> None:
         """Derive account from environment private key if provided."""
         pk = (
-            getattr(config, "faucet_private_key", None) or
-            os.getenv("FAUCET_PRIVATE_KEY") or
-            os.getenv("DEDICATED_CELO_WALLET_KEY") or
+            config.funding_private_key or
             ""
         )
         if isinstance(pk, str):
             pk = pk.strip()
         if not pk or len(pk) < 32 or str(pk).lower() in ("none", "null", "undefined", "false"):
-            pk = "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
+            pk = ""
         if not pk:
-            logger.info("No faucet private key configured (acceptable in DRY_RUN mode).")
-            if config.faucet_address:
+            logger.info("No funding wallet private key configured.")
+            if config.funding_address:
                 try:
-                    self._address = Web3.to_checksum_address(config.faucet_address)
+                    self._address = Web3.to_checksum_address(config.funding_address)
                 except Exception:
-                    self._address = config.faucet_address
+                    self._address = config.funding_address
             return
 
         try:
@@ -56,18 +54,18 @@ class WalletManager:
             self._address = derived_addr
 
             # Validate against configured address if provided
-            if config.faucet_address:
-                expected_addr = Web3.to_checksum_address(config.faucet_address)
+            if config.funding_address:
+                expected_addr = Web3.to_checksum_address(config.funding_address)
                 if derived_addr.lower() != expected_addr.lower():
                     logger.warning(
-                        "FAUCET_ADDRESS in .env does not match address derived from FAUCET_PRIVATE_KEY! "
+                        "FUNDING_WALLET_ADDRESS does not match the configured funding wallet key. "
                         "Derived: %s vs Configured: %s",
                         self.truncate_address(derived_addr),
                         self.truncate_address(expected_addr),
                     )
             logger.info("Faucet account initialized: %s", self.truncate_address(derived_addr))
         except Exception as e:
-            logger.error("Failed to initialize faucet account from private key: %s", e)
+            logger.error("Failed to initialize funding wallet account: %s", e)
             self._account = None
 
     @property
@@ -80,8 +78,7 @@ class WalletManager:
         """Get the derived LocalAccount. Raises RuntimeError if not configured."""
         if self._account is None:
             raise RuntimeError(
-                "Faucet private key is not configured or invalid. "
-                "Check FAUCET_PRIVATE_KEY in your .env file."
+                "Funding wallet private key is not configured or invalid."
             )
         return self._account
 
@@ -107,15 +104,15 @@ class WalletManager:
             return True, "DRY_RUN mode active: real wallet signing bypassed."
 
         if not self._account:
-            return False, "FAUCET_PRIVATE_KEY is missing or invalid in .env."
+            return False, "FUNDING_WALLET_PRIVATE_KEY is missing or invalid."
 
-        if config.faucet_address:
-            expected = Web3.to_checksum_address(config.faucet_address)
+        if config.funding_address:
+            expected = Web3.to_checksum_address(config.funding_address)
             derived = Web3.to_checksum_address(self._account.address)
             if expected.lower() != derived.lower():
                 return (
                     False,
-                    f"Address mismatch: FAUCET_ADDRESS ({expected}) != derived ({derived}).",
+                    f"Funding wallet address does not match the configured private key.",
                 )
 
         return True, f"Wallet configured: {self.truncate_address(self.address)}"

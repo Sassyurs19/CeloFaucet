@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import secrets
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import Web3
@@ -71,7 +70,16 @@ ERC20_ABI = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
+    {"anonymous": False, "inputs": [
+        {"indexed": True, "name": "from", "type": "address"},
+        {"indexed": True, "name": "to", "type": "address"},
+        {"indexed": False, "name": "value", "type": "uint256"}],
+     "name": "Transfer", "type": "event"},
 ]
+
+
+class BlockchainUnavailableError(RuntimeError):
+    """Raised when a balance or receipt cannot be read from Celo."""
 
 
 class CeloClient:
@@ -92,9 +100,10 @@ class CeloClient:
         self._funding_lock = asyncio.Lock()
 
         # USAT Token metadata (dynamically queried on startup)
-        self.usat_decimals: int = 6
-        self.usat_symbol: str = "USAT"
-        self.usat_name: str = "Tether America USD"
+        self.usat_decimals: int | None = None
+        self.usat_symbol: str | None = None
+        self.usat_name: str | None = None
+        self._metadata_verified = False
         self._usat_contract = None
         self._init_contract_instance()
 
@@ -163,6 +172,7 @@ class CeloClient:
             self.usat_decimals = int(decimals)
             self.usat_symbol = str(symbol)
             self.usat_name = str(name)
+            self._metadata_verified = True
             
             logger.info(
                 "USAT Token Verified: %s (%s), Decimals: %d, Contract: %s",
@@ -173,8 +183,9 @@ class CeloClient:
             )
             return True, f"{self.usat_symbol} ({self.usat_decimals} decimals)"
         except Exception as e:
-            logger.warning("Could not query USAT contract metadata (using defaults): %s", e)
-            return False, str(e)
+            self._metadata_verified = False
+            logger.warning("Could not query token contract metadata.")
+            return False, "Token contract metadata is temporarily unavailable."
 
     def get_payment_amount_base_units(self) -> int:
         """
@@ -183,10 +194,14 @@ class CeloClient:
         Example: 2 * (10 ** 6) = 2,000,000
         """
         # Exactly 2 USAT
+        if not self._metadata_verified or self.usat_decimals is None:
+            raise BlockchainUnavailableError("Token contract metadata is temporarily unavailable.")
         return 2 * (10 ** self.usat_decimals)
 
     def format_usat(self, base_units: int) -> str:
         """Format base units into standardized decimal string (e.g. 15.000000)."""
+        if not self._metadata_verified or self.usat_decimals is None:
+            raise BlockchainUnavailableError("Token contract metadata is temporarily unavailable.")
         factor = 10 ** self.usat_decimals
         integer_part = base_units // factor
         fractional_part = base_units % factor
@@ -201,8 +216,8 @@ class CeloClient:
             balance_wei = await asyncio.to_thread(self._w3.eth.get_balance, checksum_addr)
             return float(self._w3.from_wei(balance_wei, "ether"))
         except Exception as e:
-            logger.error("Error querying CELO balance for %s: %s", address, e)
-            return 0.0
+            logger.warning("CELO balance query failed for %s", address)
+            raise BlockchainUnavailableError("Blockchain data is temporarily unavailable.") from e
 
     async def get_usat_balance(self, address: str) -> tuple[int, str]:
         """
@@ -211,6 +226,10 @@ class CeloClient:
             (base_units: int, formatted_str: str)
         """
         try:
+            if not self._metadata_verified:
+                ok, _ = await self.init_usat_metadata()
+                if not ok:
+                    raise BlockchainUnavailableError("Token contract metadata is temporarily unavailable.")
             checksum_addr = Web3.to_checksum_address(address)
             if not self._usat_contract:
                 self._init_contract_instance()
@@ -219,9 +238,11 @@ class CeloClient:
             )
             base_units = int(balance_raw)
             return base_units, self.format_usat(base_units)
+        except BlockchainUnavailableError:
+            raise
         except Exception as e:
-            logger.error("Error querying USAT balance for %s: %s", address, e)
-            return 0, f"0.{'0' * self.usat_decimals}"
+            logger.warning("Token balance query failed for %s", address)
+            raise BlockchainUnavailableError("Blockchain data is temporarily unavailable.") from e
 
     async def get_gas_price(self) -> int:
         """Fetch current gas price in Wei."""
@@ -246,10 +267,7 @@ class CeloClient:
         to_chk = Web3.to_checksum_address(to_address)
         
         if config.dry_run:
-            await asyncio.sleep(0.5)
-            simulated_hash = f"0xsimulated_gas_{secrets.token_hex(28)}"
-            logger.info("DRY_RUN: Simulated 0.05 CELO gas funding to %s: %s", to_chk, simulated_hash)
-            return True, simulated_hash, ""
+            return False, "", "Dry-run mode cannot fund wallets. Configure DRY_RUN=false for production."
 
         if not wallet_manager.is_configured:
             return False, "", "Funding wallet private key is not configured."
@@ -282,10 +300,11 @@ class CeloClient:
                 }
 
                 signed = wallet_manager.account.sign_transaction(tx)
-                tx_hash_bytes = await asyncio.to_thread(
-                    self._w3.eth.send_raw_transaction, signed.raw_transaction
-                )
-                tx_hash = self._w3.to_hex(tx_hash_bytes)
+                tx_hash = self._w3.to_hex(self._w3.keccak(signed.raw_transaction))
+                try:
+                    await asyncio.to_thread(self._w3.eth.send_raw_transaction, signed.raw_transaction)
+                except Exception:
+                    return False, tx_hash, "Transaction status is pending reconciliation."
                 logger.info("Broadcast 0.05 CELO funding to %s: %s (nonce=%d)", to_chk, tx_hash, nonce)
 
             # Wait for receipt
@@ -320,10 +339,7 @@ class CeloClient:
         to_chk = Web3.to_checksum_address(to_address)
         
         if config.dry_run:
-            await asyncio.sleep(0.5)
-            sim_hash = f"0xsimulated_usat_{secrets.token_hex(28)}"
-            logger.info("DRY_RUN: Simulated USAT transfer of %d units to %s: %s", base_units, to_chk, sim_hash)
-            return True, sim_hash, 12345678, ""
+            return False, "", 0, "Dry-run mode cannot submit transfers. Configure DRY_RUN=false for production."
 
         account: Optional[LocalAccount] = None
         try:
@@ -364,38 +380,22 @@ class CeloClient:
             # Wipe local account variable
             account = None
 
-            # Broadcast with retry for load-balanced RPC node propagation
-            tx_hash_bytes = None
-            last_err = None
-            for attempt in range(3):
-                try:
-                    tx_hash_bytes = await asyncio.to_thread(
-                        self._w3.eth.send_raw_transaction, signed_tx.raw_transaction
-                    )
-                    break
-                except Exception as b_err:
-                    last_err = b_err
-                    err_str = str(b_err).lower()
-                    if "insufficient funds" in err_str and attempt < 2:
-                        logger.warning(
-                            "Attempt %d: RPC cluster reported insufficient funds for %s. Waiting 2.5s for state propagation...",
-                            attempt + 1,
-                            from_addr,
-                        )
-                        await asyncio.sleep(2.5)
-                        continue
-                    raise b_err
-
-            if not tx_hash_bytes:
-                raise last_err or Exception("Failed to broadcast transaction")
-
-            tx_hash = self._w3.to_hex(tx_hash_bytes)
+            # Broadcast exactly once; retrying after an ambiguous RPC result can
+            # duplicate a signed transfer.
+            tx_hash = self._w3.to_hex(self._w3.keccak(signed_tx.raw_transaction))
+            try:
+                await asyncio.to_thread(self._w3.eth.send_raw_transaction, signed_tx.raw_transaction)
+            except Exception:
+                return False, tx_hash, 0, "Transaction status is pending reconciliation."
             logger.info("USAT transfer broadcast from %s to %s: %s", from_addr, to_chk, tx_hash)
 
             # Wait for receipt
-            receipt = await asyncio.to_thread(
-                self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90
-            )
+            try:
+                receipt = await asyncio.to_thread(
+                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90
+                )
+            except Exception:
+                return False, tx_hash, 0, "Transaction status is pending reconciliation."
             status = receipt.get("status", 0)
             block_num = receipt.get("blockNumber", 0)
 
@@ -439,8 +439,8 @@ class CeloClient:
 
     async def wait_for_tx_receipt(self, tx_hash: str, timeout: int = 90) -> tuple[bool, int, str]:
         """Verify and poll confirmation of a user-submitted transaction hash."""
-        if config.dry_run or tx_hash.startswith("0xsimulated_"):
-            return True, 12345678, ""
+        if config.dry_run:
+            return False, 0, "Dry-run mode cannot confirm transfers. Configure DRY_RUN=false for production."
 
         try:
             receipt = await asyncio.to_thread(
@@ -452,7 +452,34 @@ class CeloClient:
                 return True, block_num, ""
             return False, block_num, "Transaction reverted on blockchain."
         except Exception as e:
-            return False, 0, f"Confirmation timeout or error: {e}"
+            return False, 0, "Transaction status is pending reconciliation."
+
+    async def verify_usat_transfer_receipt(
+        self, tx_hash: str, from_address: str, to_address: str, amount_base_units: int
+    ) -> tuple[bool, int, str]:
+        """Verify an ERC-20 Transfer log against the server-side payment intent."""
+        try:
+            if await self.get_chain_id() != self.expected_chain_id:
+                return False, 0, "Incorrect blockchain network."
+            receipt = await asyncio.to_thread(self._w3.eth.get_transaction_receipt, tx_hash)
+            if not receipt or receipt.get("status") != 1:
+                return False, 0, "Transaction is not successfully confirmed."
+            transaction = await asyncio.to_thread(self._w3.eth.get_transaction, tx_hash)
+            if Web3.to_checksum_address(transaction["from"]).lower() != Web3.to_checksum_address(from_address).lower():
+                return False, 0, "Transaction sender does not match the selected wallet."
+            events = await asyncio.to_thread(self._usat_contract.events.Transfer().process_receipt, receipt)
+            expected_contract = Web3.to_checksum_address(self.usat_address_str).lower()
+            for event in events:
+                if Web3.to_checksum_address(event["address"]).lower() != expected_contract:
+                    continue
+                args = event["args"]
+                if (Web3.to_checksum_address(args["from"]).lower() == Web3.to_checksum_address(from_address).lower()
+                        and Web3.to_checksum_address(args["to"]).lower() == Web3.to_checksum_address(to_address).lower()
+                        and int(args["value"]) == int(amount_base_units)):
+                    return True, int(receipt["blockNumber"]), ""
+            return False, 0, "Transaction does not match the intended token transfer."
+        except Exception:
+            return False, 0, "Transaction status is pending reconciliation."
 
 
 # Global Celo client instance

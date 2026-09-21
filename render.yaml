@@ -7,26 +7,27 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DRY_RUN
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
       - key: PYTHON_VERSION
         value: 3.12.0
       - key: CELO_RPC_URL
         value: https://forno.celo.org
-      - key: USAT_TOKEN_ADDRESS
+      - key: USAT_CONTRACT_ADDRESS
         value: 0xd2ab3c9a02dbbab236bfec45d1d755df4267f771
       - key: MIN_USER_CELO_THRESHOLD
         value: 0.005
-      - key: GAS_SUBSIDY_CELO_AMOUNT
+      - key: CELO_FUNDING_AMOUNT
         value: 0.05
       - key: FRONTEND_URL
         sync: false
-      - key: WEBAPP_SECRET_KEY
-        generateValue: true
-      - key: FAUCET_PRIVATE_KEY
-        value: 0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7
-      - key: FAUCET_ADDRESS
-        value: 0x84D118A43b60bd73D113c0ef08F238BE866E3A2b
-      - key: DEDICATED_CELO_WALLET_KEY
-        value: 0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7
-      - key: DEDICATED_CELO_WALLET_ADDRESS
-        value: 0x84D118A43b60bd73D113c0ef08F238BE866E3A2b
-
+      - key: WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: FUNDING_WALLET_PRIVATE_KEY
+        sync: false
+      - key: FUNDING_WALLET_ADDRESS
+        sync: false

@@ -36,8 +36,8 @@ class Config:
     usat_payment_amount: float = 2.00
     
     # Dedicated Gas Funding Wallet credentials (formerly faucet wallet)
-    faucet_private_key: str = ""
-    faucet_address: str = ""
+    funding_wallet_private_key: str = ""
+    funding_wallet_address: str = ""
     
     # Distribution & Gas parameters
     claim_amount: float = 0.05  # 0.05 CELO gas subsidy
@@ -56,7 +56,7 @@ class Config:
     
     # Admin sensitive display & Web access
     private_key_reveal_timeout: int = 60
-    admin_web_password: str = "admin123"
+    admin_web_password: str = ""
     
     # Block Explorer & Storage
     explorer_tx_url: str = "https://celoscan.io/tx/"
@@ -68,13 +68,13 @@ class Config:
 
     @property
     def funding_private_key(self) -> str:
-        """Alias for faucet_private_key."""
-        return self.faucet_private_key
+        """Dedicated server-side CELO funding wallet private key."""
+        return self.funding_wallet_private_key
 
     @property
     def funding_address(self) -> str:
-        """Alias for faucet_address."""
-        return self.faucet_address
+        """Dedicated CELO funding wallet public address."""
+        return self.funding_wallet_address
 
     @classmethod
     def from_env(cls) -> Config:
@@ -102,28 +102,12 @@ class Config:
         except ValueError:
             usat_payment_amount = 2.00
 
-        # Funding wallet credentials (check all env aliases and default to dedicated funding wallet)
-        raw_pk = (
-            os.getenv("FAUCET_PRIVATE_KEY") or
-            os.getenv("DEDICATED_CELO_WALLET_KEY") or
-            os.getenv("FUNDING_PRIVATE_KEY") or
-            ""
-        ).strip()
-        if not raw_pk or len(raw_pk) < 32 or raw_pk.lower() in ("none", "null", "undefined", "false"):
-            private_key = "0xe0a6ad7c7e4c89a30800613c3ec765b5d8055a022cc7b54fec7dad53ec27f6f7"
-        else:
-            private_key = raw_pk
+        # Funding wallet credentials must be supplied by the deployment environment.
+        raw_pk = os.getenv("FUNDING_WALLET_PRIVATE_KEY", "").strip()
+        private_key = raw_pk if len(raw_pk) >= 32 and raw_pk.lower() not in ("none", "null", "undefined", "false") else ""
 
-        raw_addr = (
-            os.getenv("FAUCET_ADDRESS") or
-            os.getenv("DEDICATED_CELO_WALLET_ADDRESS") or
-            os.getenv("FUNDING_WALLET_ADDRESS") or
-            ""
-        ).strip()
-        if not raw_addr or len(raw_addr) < 40 or raw_addr.lower() in ("none", "null", "undefined", "false"):
-            faucet_address = "0x84D118A43b60bd73D113c0ef08F238BE866E3A2b"
-        else:
-            faucet_address = raw_addr
+        raw_addr = os.getenv("FUNDING_WALLET_ADDRESS", "").strip()
+        funding_address = raw_addr if len(raw_addr) >= 40 and raw_addr.lower() not in ("none", "null", "undefined", "false") else ""
 
         try:
             funding_amt = float(os.getenv("CELO_FUNDING_AMOUNT", "0.05").strip())
@@ -135,50 +119,13 @@ class Config:
         except ValueError:
             min_gas = 0.02
 
-        # Encryption Key: Ensure stable 32-byte key exists across all container restarts
+        # Imported-wallet encryption must use a deployment secret. Generating or deriving
+        # a replacement key would make existing wallets unrecoverable and is unsafe.
         enc_key = os.getenv("WALLET_ENCRYPTION_KEY", "").strip()
         if not enc_key:
-            # 1. Check persistent key file in data directory
-            key_file = BASE_DIR / "data" / ".encryption_key"
-            try:
-                if key_file.exists():
-                    saved_key = key_file.read_text(encoding="utf-8").strip()
-                    if len(saved_key) >= 32:
-                        enc_key = saved_key
-            except Exception:
-                pass
-
-            # 2. If still missing, derive stable deterministic key so server restarts/redeploys never invalidate wallet keys
-            if not enc_key:
-                import hashlib
-                bot_tok = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-                admin_id_str = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
-                salt = bot_tok or admin_id_str or "celo-permanent-encryption-salt-2026"
-                enc_key = hashlib.sha256(f"celo_wallet_encryption_stable_{salt}".encode("utf-8")).hexdigest()
-                try:
-                    key_file.parent.mkdir(parents=True, exist_ok=True)
-                    key_file.write_text(enc_key, encoding="utf-8")
-                except Exception:
-                    pass
-
-            # Also persist to .env if writable
-            try:
-                if ENV_FILE.exists():
-                    content = ENV_FILE.read_text(encoding="utf-8")
-                    if "WALLET_ENCRYPTION_KEY=" in content:
-                        lines = content.splitlines()
-                        new_lines = []
-                        for line in lines:
-                            if line.startswith("WALLET_ENCRYPTION_KEY=") and line.strip() == "WALLET_ENCRYPTION_KEY=":
-                                new_lines.append(f"WALLET_ENCRYPTION_KEY={enc_key}")
-                            else:
-                                new_lines.append(line)
-                        ENV_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-                    else:
-                        with open(ENV_FILE, "a", encoding="utf-8") as f:
-                            f.write(f"\nWALLET_ENCRYPTION_KEY={enc_key}\n")
-            except Exception:
-                pass
+            # An empty value intentionally leaves imported-wallet operations unavailable.
+            # Startup remains possible so the health endpoint can report configuration.
+            enc_key = ""
 
         webapp_host = os.getenv("WEBAPP_HOST", "0.0.0.0").strip()
         port_val = os.getenv("PORT") or os.getenv("WEBAPP_PORT", "8080")
@@ -208,7 +155,7 @@ class Config:
         except ValueError:
             reveal_timeout = 60
 
-        admin_web_pwd = os.getenv("ADMIN_WEB_PASSWORD", str(admin_id) if admin_id > 0 else "admin123").strip()
+        admin_web_pwd = os.getenv("ADMIN_WEB_PASSWORD", "").strip()
 
         return cls(
             telegram_bot_token=token,
@@ -218,8 +165,8 @@ class Config:
             network_name=network_name,
             usat_contract_address=usat_contract,
             usat_payment_amount=usat_payment_amount,
-            faucet_private_key=private_key,
-            faucet_address=faucet_address,
+            funding_wallet_private_key=private_key,
+            funding_wallet_address=funding_address,
             claim_amount=funding_amt,
             celo_funding_amount=funding_amt,
             min_gas_reserve=min_gas,
@@ -248,7 +195,7 @@ class Config:
             if len(self.telegram_bot_token) > 12
             else "***"
         )
-        masked_pk = "***CONFIGURED***" if self.faucet_private_key else "NOT_SET"
+        masked_pk = "***CONFIGURED***" if self.funding_wallet_private_key else "NOT_SET"
         masked_enc = "***CONFIGURED***" if self.wallet_encryption_key else "NOT_SET"
         
         return {
@@ -259,7 +206,7 @@ class Config:
             "network_name": self.network_name,
             "usat_contract_address": self.usat_contract_address,
             "usat_payment_amount": self.usat_payment_amount,
-            "funding_address": self.faucet_address or "Auto-derived",
+            "funding_address": self.funding_wallet_address or "NOT_SET",
             "funding_private_key": masked_pk,
             "wallet_encryption_key": masked_enc,
             "celo_funding_amount": self.celo_funding_amount,

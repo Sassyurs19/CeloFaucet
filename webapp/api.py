@@ -8,9 +8,6 @@ automatic 0.05 CELO gas funding, rate limiting, and admin controls.
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import logging
 import re
@@ -26,7 +23,7 @@ from web3 import Web3
 from config import config
 from database import db, normalize_mobile, is_admin_phone
 from wallet import wallet_manager
-from celo import celo_client
+from celo import BlockchainUnavailableError, celo_client
 from services.encryption import encryption_service
 from services.validation import validate_celo_address
 
@@ -34,12 +31,6 @@ logger = logging.getLogger(__name__)
 
 # Argon2id password hasher
 password_hasher = PasswordHasher()
-
-# In-memory session store cache & rate-limiting trackers
-# session_id -> { "user_id": int, "is_admin": bool, "mobile": str, "created_at": float }
-USER_SESSIONS: dict[str, dict] = {}
-# admin_session_id -> { "is_admin": bool, "created_at": float }
-ADMIN_SESSIONS: set[str] = set()
 
 # Login rate limiting: normalized_mobile -> list of failed attempt timestamps
 LOGIN_FAILED_ATTEMPTS: dict[str, list[float]] = {}
@@ -63,124 +54,29 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 
 # --- Cryptographically Signed, Persistent Session Tokens ---
 
-def create_session_token(user_id: int, mobile: str, is_admin: bool, exp_days: int = 30) -> str:
+async def create_session_token(user_id: int, mobile: str, is_admin: bool, exp_days: int = 30) -> str:
     """
-    Generate cryptographically signed, stateless session token.
-    Survives container redeployments, restarts, and sleep cycles without forcing user logouts.
+    Generate an opaque durable server-side session token.
     """
-    secret = (config.wallet_encryption_key or "celo_permanent_session_secret_2026").encode("utf-8")
-    payload = {
-        "uid": int(user_id),
-        "mob": str(mobile or ""),
-        "adm": bool(is_admin),
-        "iat": int(time.time()),
-        "exp": int(time.time()) + (exp_days * 86400),
-    }
-    payload_json = json.dumps(payload, separators=(',', ':')).encode("utf-8")
-    b64_payload = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
-    sig = hmac.new(secret, b64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
-    token = f"{b64_payload}.{sig}"
-    
-    # Also keep in in-memory session cache for fast lookup
-    USER_SESSIONS[token] = {
-        "user_id": user_id,
-        "is_admin": is_admin,
-        "mobile": mobile,
-        "created_at": time.time(),
-    }
+    token = secrets.token_urlsafe(48)
+    expires_at = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + exp_days * 86400))
+    await db.create_session(token, user_id, is_admin, expires_at)
     return token
-
-
-def verify_session_token(token: str) -> dict | None:
-    """
-    Verify cryptographically signed token. Returns verified payload dict or None.
-    """
-    if not token or "." not in token:
-        return None
-    try:
-        parts = token.split(".", 1)
-        b64_payload, sig = parts[0], parts[1]
-        secret = (config.wallet_encryption_key or "celo_permanent_session_secret_2026").encode("utf-8")
-        expected_sig = hmac.new(secret, b64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected_sig):
-            return None
-        padded = b64_payload + "=" * ((4 - len(b64_payload) % 4) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8"))
-        if payload.get("exp", 0) < time.time():
-            return None
-        return payload
-    except Exception:
-        return None
 
 
 # --- Helper Functions & Middlewares ---
 
 def get_user_id_from_request(request: web.Request) -> int | None:
     """Extract authenticated user ID from Authorization header, X-Session-Id, or cookie."""
-    token = None
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-    if not token:
-        token = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
-
-    if not token:
-        return None
-
-    # 1. Check in-memory cache
-    sess = USER_SESSIONS.get(token)
-    if sess:
-        return sess.get("user_id")
-
-    # 2. Check signed token (survives restarts/redeploys)
-    payload = verify_session_token(token)
-    if payload:
-        uid = payload.get("uid")
-        is_adm = bool(payload.get("adm"))
-        mob = payload.get("mob", "")
-        # Restore into in-memory session cache
-        USER_SESSIONS[token] = {
-            "user_id": uid,
-            "is_admin": is_adm,
-            "mobile": mob,
-            "created_at": payload.get("iat", time.time()),
-        }
-        return uid
-
-    return None
+    session = request.get("user_session")
+    return int(session["user_id"]) if session else None
 
 
 def is_admin_request(request: web.Request) -> bool:
     """Verify admin authorization token or designated admin user session."""
-    auth_token = request.headers.get("X-Admin-Token") or request.cookies.get("admin_session")
-    if auth_token and auth_token in ADMIN_SESSIONS:
-        return True
-
-    auth_header = request.headers.get("Authorization", "")
-    token = None
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-    if not token:
-        token = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
-
-    if not token:
-        return False
-
-    if token in USER_SESSIONS:
-        return bool(USER_SESSIONS[token].get("is_admin"))
-
-    payload = verify_session_token(token)
-    if payload:
-        is_adm = bool(payload.get("adm"))
-        USER_SESSIONS[token] = {
-            "user_id": payload.get("uid"),
-            "is_admin": is_adm,
-            "mobile": payload.get("mob", ""),
-            "created_at": payload.get("iat", time.time()),
-        }
-        return is_adm
-
-    return False
+    admin_session = request.get("admin_session")
+    user_session = request.get("user_session")
+    return bool((admin_session and admin_session.get("is_admin")) or (user_session and user_session.get("is_admin")))
 
 
 def mask_mobile(mobile: str | None) -> str:
@@ -277,11 +173,10 @@ async def api_register(request: web.Request) -> web.Response:
     is_admin = is_admin_phone(normalized_mobile)
 
     # Create cryptographically signed persistent session token
-    session_token = create_session_token(user_id, normalized_mobile, is_admin)
+    session_token = await create_session_token(user_id, normalized_mobile, is_admin)
 
     resp = web.json_response({
         "success": True,
-        "token": session_token,
         "user": {
             "id": user_id,
             "name": name,
@@ -292,7 +187,8 @@ async def api_register(request: web.Request) -> web.Response:
             "registered": True,
         }
     })
-    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=False)
+    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=True,
+                    secure=config.frontend_url.startswith("https://"), samesite="None" if config.frontend_url.startswith("https://") else "Lax")
     return resp
 
 
@@ -383,12 +279,11 @@ async def api_login(request: web.Request) -> web.Response:
     is_admin = is_admin_phone(user.get("normalized_mobile") or user.get("mobile_number"))
 
     # Create cryptographically signed persistent session token
-    session_token = create_session_token(user_id, normalized_mobile, is_admin)
+    session_token = await create_session_token(user_id, normalized_mobile, is_admin)
 
     full_name = user.get("full_name") or user.get("first_name") or "User"
     resp = web.json_response({
         "success": True,
-        "token": session_token,
         "user": {
             "id": user_id,
             "name": full_name,
@@ -399,7 +294,8 @@ async def api_login(request: web.Request) -> web.Response:
             "registered": True,
         }
     })
-    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=False)
+    resp.set_cookie("usat_session", session_token, max_age=86400 * 30, httponly=True,
+                    secure=config.frontend_url.startswith("https://"), samesite="None" if config.frontend_url.startswith("https://") else "Lax")
     return resp
 
 
@@ -412,11 +308,15 @@ async def api_logout(request: web.Request) -> web.Response:
     if not token:
         token = request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
 
-    if token and token in USER_SESSIONS:
-        USER_SESSIONS.pop(token, None)
+    if token:
+        await db.invalidate_session(token)
+    admin_token = request.cookies.get("admin_session")
+    if admin_token:
+        await db.invalidate_session(admin_token)
 
     resp = web.json_response({"success": True, "message": "Logged out successfully."})
     resp.del_cookie("usat_session")
+    resp.del_cookie("admin_session")
     return resp
 
 
@@ -482,26 +382,6 @@ async def api_get_me(request: web.Request) -> web.Response:
     if not profile:
         profile = await db.get_user_by_id(user_id)
 
-    # Auto-heal user record if container restart or redeploy recreated ephemeral database
-    if not profile:
-        auth_header = request.headers.get("Authorization", "")
-        token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else (
-            request.headers.get("X-Session-Id") or request.cookies.get("usat_session")
-        )
-        payload = verify_session_token(token) if token else None
-        if payload and payload.get("mob"):
-            mob = payload["mob"]
-            norm_mob = normalize_mobile(mob)
-            profile = await db.get_user_by_normalized_mobile(norm_mob)
-            if not profile:
-                profile = await db.create_user_account(
-                    full_name="User",
-                    mobile_number=mob,
-                    password_hash="",
-                )
-                user_id = profile.get("id", user_id)
-                logger.info("Auto-healed user profile for %s into newly initialized database.", mob)
-
     if not profile:
         return web.json_response({
             "authenticated": False,
@@ -518,14 +398,14 @@ async def api_get_me(request: web.Request) -> web.Response:
     user_wallets = await db.get_user_wallets(user_id)
 
     async def get_wallet_usdt(w):
-        try:
-            _, u_bal = await celo_client.get_usat_balance(w["address"])
-            return float(u_bal)
-        except Exception:
-            return 0.0
+        _, u_bal = await celo_client.get_usat_balance(w["address"])
+        return float(u_bal)
 
     if user_wallets:
-        balances = await asyncio.gather(*(get_wallet_usdt(w) for w in user_wallets))
+        try:
+            balances = await asyncio.gather(*(get_wallet_usdt(w) for w in user_wallets))
+        except BlockchainUnavailableError:
+            return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
         total_usdt_balance = sum(balances)
     else:
         total_usdt_balance = 0.0
@@ -561,17 +441,17 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
+    if not await celo_client.is_connected():
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
+
     raw_wallets = await db.get_user_wallets(user_id)
 
     async def fetch_wallet_info(w):
         addr = w["address"]
-        try:
-            celo_task = celo_client.get_celo_balance(addr)
-            usat_task = celo_client.get_usat_balance(addr)
-            celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
-            u_val = float(usat_bal)
-        except Exception:
-            celo_bal, u_val = 0.0, 0.0
+        celo_task = celo_client.get_celo_balance(addr)
+        usat_task = celo_client.get_usat_balance(addr)
+        celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
+        u_val = float(usat_bal)
 
         return {
             "id": w["id"],
@@ -587,7 +467,10 @@ async def api_get_wallets(request: web.Request) -> web.Response:
         }
 
     if raw_wallets:
-        wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
+        try:
+            wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
+        except BlockchainUnavailableError:
+            return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
         total_usdt = sum(w.pop("_usat_num", 0.0) for w in wallets_data)
         wallets_data.sort(key=lambda w: (w.get("name") or "").lower())
     else:
@@ -619,21 +502,32 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
     if not is_val or not chk_addr:
         return web.json_response({"error": err_msg or "Invalid Celo address format."}, status=400)
 
-    # Prevent duplicate wallet overwrite: check if address is already added by this user
+    # If wallet address is already in user's account, select/update it gracefully instead of 409 error
     existing = await db.get_user_wallets(user_id)
     existing_wallet = next((w for w in existing if w["address"].lower() == chk_addr.lower()), None)
     if existing_wallet:
-        return web.json_response(
-            {
-                "error": f"Wallet {chk_addr[:6]}...{chk_addr[-4:]} is already in your account as '{existing_wallet['wallet_name']}'. To add another wallet, please switch accounts in your wallet extension (MetaMask/OKX) or import a new private key.",
-                "existing_wallet": {
-                    "id": existing_wallet["id"],
-                    "name": existing_wallet["wallet_name"],
-                    "address": existing_wallet["address"],
-                },
+        # If user passed a custom name (not default placeholder), update the wallet name
+        if name and not name.lower().startswith("connected wallet") and name.lower() != "imported wallet":
+            await db.rename_user_wallet(existing_wallet["id"], user_id, name)
+            existing_wallet["wallet_name"] = name
+
+        celo_bal = await celo_client.get_celo_balance(chk_addr)
+        _, usat_bal = await celo_client.get_usat_balance(chk_addr)
+        return web.json_response({
+            "success": True,
+            "is_existing": True,
+            "message": f"Wallet '{existing_wallet['wallet_name']}' is already in your account and is now selected.",
+            "wallet": {
+                "id": existing_wallet["id"],
+                "name": existing_wallet["wallet_name"],
+                "label": existing_wallet["wallet_name"],
+                "address": chk_addr,
+                "type": existing_wallet.get("wallet_type", "connected"),
+                "wallet_type": existing_wallet.get("wallet_type", "connected"),
+                "celo_balance": f"{celo_bal:.4f}",
+                "usat_balance": f"{float(usat_bal):.2f}",
             },
-            status=409,
-        )
+        })
 
     w_id = await db.add_user_wallet(
         telegram_id=user_id,
@@ -678,7 +572,7 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
-    name = str(data.get("name", "Imported Wallet")).strip() or "Imported Wallet"
+    name = str(data.get("name") or data.get("label") or "Imported Wallet").strip() or "Imported Wallet"
     raw_key = str(data.get("private_key", "")).strip()
 
     # Strict check: reject 12/24-word recovery phrases
@@ -705,8 +599,12 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "Failed to derive address from private key."}, status=400)
 
-    # Encrypt immediately via AES-256-GCM
-    encrypted_key = encryption_service.encrypt(formatted_key)
+    # Encrypt immediately via AES-256-GCM. Imports cannot proceed without the
+    # server-only master key; never substitute a generated or client-side key.
+    try:
+        encrypted_key = encryption_service.encrypt(formatted_key)
+    except RuntimeError:
+        return web.json_response({"error": "Imported wallets are temporarily unavailable. Please contact support."}, status=503)
 
     # Wipe key variables immediately
     raw_key = None
@@ -874,7 +772,6 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
         "previous_balance": f"{current_user_celo:.4f}",
         "new_balance": f"{new_user_celo:.4f}",
         "explorer_url": f"https://celoscan.io/tx/{tx_hash}",
-        "faucet_address": wallet_manager.address,
         "wallet": {
             "id": wallet["id"],
             "name": wallet["wallet_name"],
@@ -913,6 +810,12 @@ async def api_create_payment(request: web.Request) -> web.Response:
     user_id = get_user_id_from_request(request)
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
+
+    if config.dry_run:
+        return web.json_response({"error": "Transfers are disabled while DRY_RUN is enabled."}, status=503)
+
+    if not await celo_client.is_connected():
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
 
     # Check if system is paused
     if await db.is_bot_paused():
@@ -1009,16 +912,22 @@ async def api_create_payment(request: web.Request) -> web.Response:
         return web.json_response({"error": "Transfer amount must be greater than zero."}, status=400)
 
     # Dynamic base unit calculation from contract decimals
-    token_decimals = celo_client.usat_decimals or 6
+    metadata_ok, _ = await celo_client.init_usat_metadata()
+    if not metadata_ok or celo_client.usat_decimals is None:
+        return web.json_response({"error": "Token contract metadata is temporarily unavailable."}, status=503)
+    token_decimals = celo_client.usat_decimals
     required_units = int(round(amount_val * (10 ** token_decimals)))
     if required_units <= 0:
         return web.json_response({"error": "Requested amount is below token precision threshold."}, status=400)
 
     # 4. Check available USDT balance from real Celo blockchain contract
-    usat_balance_units, usat_bal_str = await celo_client.get_usat_balance(source_addr)
+    try:
+        usat_balance_units, usat_bal_str = await celo_client.get_usat_balance(source_addr)
+    except BlockchainUnavailableError:
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
     available_usdt = float(usat_bal_str)
 
-    if usat_balance_units < required_units and not config.dry_run:
+    if usat_balance_units < required_units:
         return web.json_response({
             "error": f"Insufficient USDT balance: This wallet holds {available_usdt:.2f} USDT, but {amount_val:.2f} USDT was requested."
         }, status=400)
@@ -1047,7 +956,10 @@ async def api_create_payment(request: web.Request) -> web.Response:
     )
 
     # 6. Gas check & automatic 0.05 CELO subsidy if balance < 0.005 CELO
-    current_celo = await celo_client.get_celo_balance(source_addr)
+    try:
+        current_celo = await celo_client.get_celo_balance(source_addr)
+    except BlockchainUnavailableError:
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
     celo_funded = False
     fund_tx_hash = None
 
@@ -1070,22 +982,14 @@ async def api_create_payment(request: web.Request) -> web.Response:
             logger.info("Rechecked CELO balance after subsidy for %s: %.4f CELO", source_addr, rechecked_celo)
             await asyncio.sleep(1.0)
         else:
-            logger.warning("Gas subsidy notice for %s: %s", source_addr, f_err)
-
-    # If private_key was passed in request, link it to source_wallet if not already set
-    req_pk = str(data.get("private_key") or "").strip()
-    if req_pk:
-        clean_pk = req_pk[2:] if req_pk.startswith(("0x", "0X")) else req_pk
-        if len(clean_pk) == 64:
-            try:
-                acc = Account.from_key("0x" + clean_pk)
-                if Web3.to_checksum_address(acc.address).lower() == source_addr.lower():
-                    enc_pk = encryption_service.encrypt("0x" + clean_pk)
-                    await db.update_wallet_private_key(source_wallet_id, enc_pk)
-                    source_wallet["encrypted_private_key"] = enc_pk
-                    wallet_type = "imported"
-            except Exception as ex:
-                logger.warning("Notice linking private key on payment: %s", ex)
+            if f_err == "Transaction status is pending reconciliation.":
+                await db.update_usat_payment_status(
+                    payment_id=payment_id, status="CONFIRMING", celo_fund_tx_hash=f_tx, error_message=f_err
+                )
+                return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
+            await db.update_usat_payment_status(payment_id, "FAILED", error_message="Gas funding failed")
+            logger.warning("Gas funding failed for %s: %s", source_addr, f_err)
+            return web.json_response({"error": "Gas Funding Failed. The transfer was not submitted."}, status=503)
 
     # 7. Branch on wallet type
     if wallet_type == "imported" or source_wallet.get("encrypted_private_key"):
@@ -1139,6 +1043,9 @@ async def api_create_payment(request: web.Request) -> web.Response:
                 "explorer_url": f"{config.explorer_tx_url}{tx_hash}",
                 "payment": payment_obj,
             })
+        if err_desc == "Transaction status is pending reconciliation.":
+            await db.update_usat_payment_status(payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err_desc)
+            return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
         else:
             await db.update_usat_payment_status(payment_id, "FAILED", error_message=err_desc)
             return web.json_response({"error": err_desc or "Transaction reverted on Celo blockchain."}, status=500)
@@ -1156,7 +1063,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "to_address": dest_addr,
             "celo_funded": celo_funded,
             "tx_params": tx_params,
-            "requires_private_key": True,
+            "requires_private_key": False,
             "wallet_id": source_wallet_id,
             "wallet_name": source_wallet.get("wallet_name"),
         }
@@ -1172,7 +1079,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "celo_funded": celo_funded,
             "funding_tx_hash": fund_tx_hash,
             "payment": payment_obj,
-            "requires_private_key": True,
+            "requires_private_key": False,
             "wallet_id": source_wallet_id,
             "wallet_name": source_wallet.get("wallet_name"),
         })
@@ -1198,7 +1105,17 @@ async def api_submit_payment_hash(request: web.Request) -> web.Response:
     if not payment_id or not tx_hash:
         return web.json_response({"error": "Missing payment_id or tx_hash."}, status=400)
 
-    is_confirmed, block_num, err = await celo_client.wait_for_tx_receipt(tx_hash, timeout=90)
+    if not re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
+        return web.json_response({"error": "Invalid transaction hash."}, status=400)
+    payment = await db.get_usat_payment_by_id(payment_id)
+    if not payment or (payment.get("user_id") != user_id and payment.get("telegram_id") != user_id):
+        return web.json_response({"error": "Payment not found."}, status=404)
+    if str(payment.get("status", "")).upper() not in ("PROCESSING", "PENDING", "AWAITING_USER_SIGNATURE"):
+        return web.json_response({"error": "This payment cannot be confirmed in its current state."}, status=409)
+
+    is_confirmed, block_num, err = await celo_client.verify_usat_transfer_receipt(
+        tx_hash, payment["from_address"], payment["to_address"], payment["amount_base_units"]
+    )
     if is_confirmed:
         await db.update_usat_payment_status(
             payment_id=payment_id,
@@ -1221,9 +1138,11 @@ async def api_submit_payment_hash(request: web.Request) -> web.Response:
                 "status": "CONFIRMED",
             },
         })
-    else:
-        await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=err)
-        return web.json_response({"error": err or "Transaction was not confirmed on Celo blockchain."}, status=500)
+    if err == "Transaction status is pending reconciliation.":
+        await db.update_usat_payment_status(payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err)
+        return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
+    await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=err)
+    return web.json_response({"error": err or "Transaction was not confirmed on Celo blockchain."}, status=400)
 
 
 async def api_get_payments_history(request: web.Request) -> web.Response:
@@ -1417,11 +1336,9 @@ async def api_admin_login(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
     password = str(data.get("password", "")).strip()
-    expected = config.admin_web_password or str(config.admin_telegram_id)
-
-    is_valid = False
-    if password and (password == expected or password == str(config.admin_telegram_id)):
-        is_valid = True
+    # A numeric Telegram ID is an identifier, never an administrator password.
+    expected = config.admin_web_password
+    is_valid = bool(password and expected and secrets.compare_digest(password, expected))
 
     # Also verify if user is 8142177207 and entered their own account password
     user_id = get_user_id_from_request(request)
@@ -1440,10 +1357,13 @@ async def api_admin_login(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid administrator password."}, status=401)
 
     admin_token = secrets.token_urlsafe(32)
-    ADMIN_SESSIONS.add(admin_token)
+    admin_session_user_id = user_id or (None if db.using_postgres else 0)
+    await db.create_session(admin_token, admin_session_user_id, True, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + 7 * 86400)))
 
-    resp = web.json_response({"success": True, "token": admin_token})
-    resp.set_cookie("admin_session", admin_token, max_age=86400 * 7, httponly=False)
+    resp = web.json_response({"success": True})
+    resp.set_cookie("admin_session", admin_token, max_age=86400 * 7, httponly=True,
+                    secure=config.frontend_url.startswith("https://"),
+                    samesite="None" if config.frontend_url.startswith("https://") else "Lax")
     return resp
 
 
@@ -1758,9 +1678,12 @@ async def api_admin_get_funding(request: web.Request) -> web.Response:
 
     return web.json_response({
         "funding_address": funding_addr,
+        "funding_wallet": funding_addr,
         "celo_balance": f"{celo_bal:.4f}",
+        "balance_celo": f"{celo_bal:.4f}",
         "subsidy_amount": f"{config.celo_funding_amount} CELO",
         "total_subsidies_given": stats.get("celo_subsidies_count", 0),
+        "total_subsidies": stats.get("celo_subsidies_count", 0),
         "estimated_subsidies_remaining": int(celo_bal / config.celo_funding_amount) if celo_bal > 0 else 0,
     })
 

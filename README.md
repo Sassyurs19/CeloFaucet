@@ -113,8 +113,9 @@ Follow these steps sequentially to set up and run your faucet bot.
    NETWORK_NAME=Celo Mainnet
 
    # Dedicated OKX Faucet Wallet credentials
-   FAUCET_PRIVATE_KEY=0xYOUR_64_CHAR_HEX_PRIVATE_KEY
-   FAUCET_ADDRESS=0xYOUR_FAUCET_PUBLIC_ADDRESS
+   FUNDING_WALLET_PRIVATE_KEY=0xYOUR_64_CHAR_HEX_PRIVATE_KEY
+   FUNDING_WALLET_ADDRESS=0xYOUR_FUNDING_WALLET_PUBLIC_ADDRESS
+   WALLET_ENCRYPTION_KEY=YOUR_64_CHARACTER_HEX_ENCRYPTION_KEY
 
    # Faucet Parameters
    CLAIM_AMOUNT=0.1
@@ -210,6 +211,15 @@ Once satisfied with the test results:
 ---
 
 ## 🔧 Production Deployment (Systemd Service)
+
+### Production database
+
+Render production uses PostgreSQL through the `DATABASE_URL` environment variable. Set it from a managed Render PostgreSQL service using its internal connection URL; do not commit that URL. On first backend startup, the non-destructive schema initializer creates missing tables and indexes. It does not drop tables or seed users/wallets. Local development without `DATABASE_URL` continues to use `DATABASE_PATH` SQLite.
+
+To initialize or upgrade the PostgreSQL schema manually, run `python -m scripts.init_postgres` with `NODE_ENV=production` and `DATABASE_URL` set in the execution environment. The command is non-destructive.
+If an existing SQLite database contains records that must be retained, initialize PostgreSQL first and then run
+`python -m scripts.import_sqlite_to_postgres --sqlite data/faucet.db` with `DATABASE_URL` set. The import only adds
+missing rows; it never deletes or replaces PostgreSQL records. Stop the application while importing so no writes are missed.
 
 For 24/7 background operation on Linux VPS (Ubuntu/Debian):
 

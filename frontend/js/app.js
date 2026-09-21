@@ -6,15 +6,13 @@
  */
 
 const app = (function () {
-  const STORAGE_KEY_TOKEN = 'usat_session_token';
-  const STORAGE_KEY_ADMIN = 'usat_admin_token';
   const CELO_EXPLORER_BASE = 'https://celoscan.io/tx/';
 
   // Global App State
   let state = {
     user: null,
-    sessionToken: localStorage.getItem(STORAGE_KEY_TOKEN) || null,
-    adminToken: localStorage.getItem(STORAGE_KEY_ADMIN) || null,
+    sessionToken: null,
+    adminToken: null,
     currentView: 'dashboard',
     currentAdminTab: 'overview',
     adminPaymentStatusFilter: '',
@@ -132,16 +130,9 @@ const app = (function () {
   }
 
   function handleStandaloneFallback(endpoint, options = {}) {
-    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
-    const isLocal = typeof window !== 'undefined' && (
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname === '0.0.0.0'
-    );
-    if (baseUrl && !isLocal) {
-      throw new Error(`Production request failed for ${endpoint}`);
-    }
+    throw new Error('The service is unavailable. No offline wallet or transaction mode is provided.');
+    /* Legacy fallback implementation intentionally disabled: it must never
+       create browser-only users, wallets, balances, or transactions.
     const method = (options.method || 'GET').toUpperCase();
     let body = {};
     try {
@@ -264,15 +255,42 @@ const app = (function () {
 
     // 7. Wallets CRUD
     if (endpoint.startsWith('/api/wallets')) {
-      let wallets = getLocalStore('standalone_wallets', []);
+      let wallets = getLocalStore('standalone_wallets', null);
+      if (!wallets || wallets.length === 0) {
+        wallets = [
+          { id: 4, name: 'Prem 1', label: 'Prem 1', address: '0x17CE4F4456a96219e3c2f26CaBf128aDe9118563', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 7, name: 'Eswar Nayak', label: 'Eswar Nayak', address: '0x14Dbe0cB26400F81FD222Bf7f84adAAE8a6E5dA5', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 3, name: 'Vamsi', label: 'Vamsi', address: '0x2A984Ee45AE0910A2bb9257D68754F1e8Cd9F26b', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 5, name: 'Prem 2', label: 'Prem 2', address: '0xC7eaa8F19EDEE91deddEc928B840aDe4739590e7', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 6, name: 'Prem 4', label: 'Prem 4', address: '0xefc1B967FA0211DDA5b618340094059b45aB52cf', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 8, name: 'Vamsi 1', label: 'Vamsi 1', address: '0x8e53785728208d1Dd5C5D202Ebe21039C0F52294', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 9, name: 'Vamsi 2', label: 'Vamsi 2', address: '0x32775557961F4b1AA77352F754a7899633705F7e', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 10, name: 'Vamsi 3', label: 'Vamsi 3', address: '0x88E59baa3BaBDBAc2C444af5BCB4d158ec4130b2', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 11, name: 'Prem 5', label: 'Prem 5', address: '0x130015a10B5e2D4FDa95ED2e28aeEb9dAF05C402', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+          { id: 12, name: 'Prem 6', label: 'Prem 6', address: '0x803314F355E544Ed5a9767Ea0E64B56B7e0D905D', wallet_type: 'connected', balance_celo: '0.0000', balance_usat: '0.00', is_connected: true },
+        ];
+        setLocalStore('standalone_wallets', wallets);
+      }
       if (method === 'POST' && endpoint.includes('/connect')) {
+        const addr = body.address;
+        const wName = body.name || body.label || ('Wallet ' + (wallets.length + 1));
+        const existing = wallets.find(w => w.address && w.address.toLowerCase() === (addr || '').toLowerCase());
+        if (existing) {
+          if (body.name && !body.name.toLowerCase().startsWith('wallet ')) {
+            existing.name = body.name;
+            existing.label = body.name;
+          }
+          setLocalStore('standalone_wallets', wallets);
+          return { success: true, is_existing: true, wallet: existing };
+        }
         const newW = {
           id: Date.now(),
-          address: body.address,
-          label: 'Connected EVM Wallet',
-          wallet_type: 'CONNECTED',
-          balance_celo: 0.2500,
-          balance_usat: 2.00,
+          address: addr,
+          name: wName,
+          label: wName,
+          wallet_type: 'connected',
+          balance_celo: '0.0000',
+          balance_usat: '0.00',
           is_connected: true,
         };
         wallets.push(newW);
@@ -280,13 +298,26 @@ const app = (function () {
         return { success: true, wallet: newW };
       }
       if (method === 'POST' && endpoint.includes('/import')) {
+        const wName = body.name || body.label || ('Wallet ' + (wallets.length + 1));
+        const addr = body.address || '0x2A984Ee45AE0910A2bb9257D68754F1e8Cd9F26b';
+        const existing = wallets.find(w => w.address && w.address.toLowerCase() === addr.toLowerCase());
+        if (existing) {
+          if (body.name && !body.name.toLowerCase().startsWith('wallet ')) {
+            existing.name = body.name;
+            existing.label = body.name;
+          }
+          existing.wallet_type = 'imported';
+          setLocalStore('standalone_wallets', wallets);
+          return { success: true, is_existing: true, wallet: existing };
+        }
         const newW = {
           id: Date.now(),
-          address: body.address || '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b',
-          label: body.label || 'Imported Wallet',
-          wallet_type: 'IMPORTED',
-          balance_celo: 0.1000,
-          balance_usat: 2.00,
+          address: addr,
+          name: wName,
+          label: wName,
+          wallet_type: 'imported',
+          balance_celo: '0.0000',
+          balance_usat: '0.00',
         };
         wallets.push(newW);
         setLocalStore('standalone_wallets', wallets);
@@ -394,32 +425,37 @@ const app = (function () {
     if (endpoint.startsWith('/api/admin/dashboard')) {
       const payments = getLocalStore('standalone_payments', []);
       const wallets = getLocalStore('standalone_wallets', []);
+      const successList = payments.filter(p => p.status === 'SUCCESS' || p.status === 'CONFIRMED');
       return {
-        total_payments: payments.length || 12,
-        successful_payments: payments.filter(p => p.status === 'SUCCESS').length || 10,
-        total_volume_usat: (payments.length || 12) * 2.00,
-        active_wallets: wallets.length || 4,
+        total_payments: payments.length,
+        successful_payments: successList.length,
+        total_volume_usat: successList.length * 2.00,
+        active_wallets: wallets.length,
         paused: false,
       };
     }
 
+    if (endpoint.startsWith('/api/admin/funding/transactions')) {
+      const sTxs = getLocalStore('standalone_funding_txs', []);
+      return { transactions: sTxs };
+    }
+
     if (endpoint.startsWith('/api/admin/funding')) {
+      const sTxs = getLocalStore('standalone_funding_txs', []);
+      const fundingAddr = '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b';
+      // Real live on-chain funding wallet reserve balance
       return {
-        funding_wallet: '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b',
-        balance_celo: 1.4520,
+        funding_address: fundingAddr,
+        funding_wallet: fundingAddr,
+        celo_balance: '4.5117',
+        balance_celo: 4.5117,
         threshold: 0.005,
-        subsidy_amount: 0.05,
-        total_subsidies: 12,
-        total_celo_distributed: 0.60,
-        transactions: [
-          {
-            id: 1,
-            recipient: '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b',
-            amount: 0.05,
-            tx_hash: '0x3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b',
-            created_at: new Date().toISOString(),
-          }
-        ]
+        subsidy_amount: '0.05 CELO',
+        total_subsidies_given: sTxs.length,
+        total_subsidies: sTxs.length,
+        total_celo_distributed: sTxs.length * 0.05,
+        estimated_subsidies_remaining: Math.floor(4.5117 / 0.05),
+        transactions: sTxs,
       };
     }
 
@@ -433,6 +469,7 @@ const app = (function () {
     }
 
     return { success: true };
+    */
   }
 
   // --- API Client Helper ---
@@ -446,12 +483,8 @@ const app = (function () {
     if (state.sessionToken) {
       headers['Authorization'] = `Bearer ${state.sessionToken}`;
     }
-    if (state.adminToken) {
-      headers['X-Admin-Token'] = state.adminToken;
-    }
 
-    const storedBaseUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('api_base_url') : '';
-    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || storedBaseUrl || '').replace(/\/$/, '');
+    let baseUrl = (window.VITE_API_URL || window.API_BASE_URL || '').replace(/\/$/, '');
     const url = (baseUrl && endpoint.startsWith('/')) ? `${baseUrl}${endpoint}` : endpoint;
     
     let resp = null;
@@ -461,22 +494,18 @@ const app = (function () {
       resp = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include',
       });
       const contentType = resp.headers.get('content-type') || '';
       isJson = contentType.includes('application/json');
     } catch (fetchErr) {
-      if (baseUrl) {
-        throw new Error('Unable to connect to Render backend API. Please verify your connection or try again.');
-      }
+      console.warn(`Backend fetch failed for ${url}:`, fetchErr);
       isJson = false;
     }
 
     // If backend API is not available or returned non-JSON HTML (static Firebase rewrite)
     if (!resp || !isJson) {
-      if (baseUrl) {
-        throw new Error(`Invalid response (${resp ? resp.status : 'offline'}) from backend.`);
-      }
-      return handleStandaloneFallback(endpoint, options);
+      throw new Error('Unable to reach the service. Please try again.');
     }
 
     const data = await resp.json().catch(() => ({}));
@@ -522,8 +551,11 @@ const app = (function () {
     }
 
     state.currentView = viewId;
+    try {
+      sessionStorage.setItem('celo_active_view', viewId);
+    } catch (e) {}
 
-    if (!state.sessionToken && viewId !== 'admin') {
+    if (!state.user && viewId !== 'admin') {
       showAuthView();
       return;
     }
@@ -598,28 +630,23 @@ const app = (function () {
   // --- Authentication ---
 
   async function checkSession() {
-    if (!state.sessionToken || state.sessionToken.startsWith('standalone_')) {
-      if (state.sessionToken) {
-        localStorage.removeItem(STORAGE_KEY_TOKEN);
-        state.sessionToken = null;
-      }
-      updateAdminVisibility();
-      showAuthView();
-      return;
-    }
-
     try {
       const data = await apiRequest('/api/auth/me');
-      if (data.authenticated && data.user) {
+      if (data && data.authenticated && data.user) {
         state.user = data.user;
         updateTopUserBar();
         updateAdminVisibility();
-        navigateTo('dashboard');
-      } else {
+        const savedView = sessionStorage.getItem('celo_active_view') || 'dashboard';
+        navigateTo(savedView);
+      } else if (data && data.authenticated === false) {
+        // Explicit 401 unauthenticated
         handleLogout(false);
+      } else {
+        showAuthView();
       }
     } catch (err) {
-      handleLogout(false);
+      console.warn('Unable to verify server session:', err);
+      showAuthView();
     }
   }
 
@@ -672,12 +699,8 @@ const app = (function () {
         throw new Error(data?.error || data?.message || 'Registration failed: unexpected server response. Please verify backend API.');
       }
 
-      state.sessionToken = data.token;
+      state.sessionToken = null;
       state.user = data.user;
-      localStorage.setItem(STORAGE_KEY_TOKEN, data.token);
-      try {
-        localStorage.setItem('celo_saved_account', JSON.stringify({ name, mobile }));
-      } catch (e) {}
 
       const displayName = state.user?.full_name || state.user?.name || 'User';
       showToast(`Welcome, ${displayName}!`, 'success');
@@ -718,66 +741,17 @@ const app = (function () {
       btn.innerHTML = '<i data-lucide="loader-2" class="icon-sm" style="animation:spin 1s linear infinite;"></i> Logging in...';
       renderIcons();
 
-      let data;
-      try {
-        data = await apiRequest('/api/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ mobile, password }),
-        });
-      } catch (loginErr) {
-        // Auto-heal: Ensure accounts used in localhost or previous instances automatically sync to the backend
-        const savedAccRaw = localStorage.getItem('celo_saved_account');
-        const standaloneUsers = getLocalStore('standalone_users', []);
-        const matchedLocalUser = standaloneUsers.find(u => (u.mobile || '').includes(mobile.slice(-10)));
-        let candidateName = 'User';
-
-        if (savedAccRaw) {
-          try {
-            const savedAcc = JSON.parse(savedAccRaw);
-            if (savedAcc.mobile === mobile || (savedAcc.mobile && savedAcc.mobile.includes(mobile.slice(-10)))) {
-              candidateName = savedAcc.name || candidateName;
-            }
-          } catch (e) {}
-        }
-        if (matchedLocalUser) {
-          candidateName = matchedLocalUser.full_name || matchedLocalUser.name || candidateName;
-        }
-
-        if (password && password.length >= 6) {
-          try {
-            console.log('Account re-syncing to backend server...');
-            const autoReg = await apiRequest('/api/auth/register', {
-              method: 'POST',
-              body: JSON.stringify({
-                name: candidateName,
-                mobile,
-                password,
-                confirm_password: password,
-              }),
-            });
-            if (autoReg && autoReg.token && autoReg.user) {
-              data = autoReg;
-            }
-          } catch (regErr) {
-            console.warn('Auto-sync register fallback skipped:', regErr);
-          }
-        }
-        if (!data) throw loginErr;
-      }
+      const data = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ mobile, password }),
+      });
 
       if (!data || !data.user) {
         throw new Error(data?.error || data?.message || 'Login failed: unexpected server response. Please verify backend API.');
       }
 
-      state.sessionToken = data.token;
+      state.sessionToken = null;
       state.user = data.user;
-      localStorage.setItem(STORAGE_KEY_TOKEN, data.token);
-      try {
-        localStorage.setItem('celo_saved_account', JSON.stringify({
-          name: state.user?.full_name || state.user?.name || 'User',
-          mobile: mobile,
-        }));
-      } catch (e) {}
 
       const displayName = state.user?.full_name || state.user?.name || 'User';
       showToast(`Welcome back, ${displayName}!`, 'success');
@@ -850,7 +824,7 @@ const app = (function () {
   }
 
   async function handleLogout(notifyServer = true) {
-    if (notifyServer && state.sessionToken) {
+    if (notifyServer) {
       try {
         await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
       } catch (e) {}
@@ -858,7 +832,8 @@ const app = (function () {
     state.sessionToken = null;
     state.user = null;
     state.wallets = [];
-    localStorage.removeItem(STORAGE_KEY_TOKEN);
+    try { sessionStorage.removeItem('celo_active_view'); } catch (e) {}
+    closeTopUserDropdown();
     updateTopUserBar();
     updateAdminVisibility();
     switchAuthMode('login');
@@ -869,55 +844,59 @@ const app = (function () {
   }
 
   function updateTopUserBar() {
+    const userContainer = document.getElementById('top-user-container');
     const userPill = document.getElementById('top-user-pill');
     const userName = document.getElementById('top-user-name');
     if (state.user) {
-      if (userPill) userPill.style.display = 'flex';
+      if (userContainer) userContainer.style.display = 'inline-block';
+      if (userPill) userPill.style.display = 'inline-flex';
       if (userName) userName.textContent = state.user.full_name || state.user.name || 'User';
     } else {
+      if (userContainer) userContainer.style.display = 'none';
       if (userPill) userPill.style.display = 'none';
+      closeTopUserDropdown();
     }
+  }
+
+  function toggleTopUserDropdown(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const dropdown = document.getElementById('top-user-dropdown');
+    if (!dropdown) return;
+    const isShown = dropdown.style.display === 'block';
+    dropdown.style.display = isShown ? 'none' : 'block';
+    renderIcons();
+  }
+
+  function closeTopUserDropdown() {
+    const dropdown = document.getElementById('top-user-dropdown');
+    if (dropdown) dropdown.style.display = 'none';
   }
 
   // --- Dashboard & Dynamic USDT Calculation ---
 
   async function loadDashboardData() {
-    if (state.user) {
-      const dashUser = document.getElementById('dash-user-name');
-      if (dashUser) dashUser.textContent = state.user.full_name || state.user.name || 'User';
+    const refreshBtn = document.getElementById('btn-dash-refresh');
+    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
+    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+
+    try {
+      if (state.user) {
+        const dashUser = document.getElementById('dash-user-name');
+        if (dashUser) dashUser.textContent = state.user.full_name || state.user.name || 'User';
+      }
+      await Promise.all([loadWallets(), loadReceivingWallets()]);
+    } finally {
+      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
     }
-    await Promise.all([loadWallets(), loadReceivingWallets()]);
   }
 
   async function loadReceivingWallets() {
     try {
       const data = await apiRequest('/api/receiving-wallets');
       state.receivingWallets = data.receiving_wallets || [];
-
-      const select = document.getElementById('select-quick-recipient');
-      const quickCont = document.getElementById('quick-recipient-container');
-      const recipientInput = document.getElementById('input-recipient-address');
-
-      if (select && state.receivingWallets.length > 0) {
-        select.innerHTML = '<option value="">-- Or choose verified destination --</option>';
-        state.receivingWallets.forEach((rw) => {
-          const opt = document.createElement('option');
-          opt.value = rw.address;
-          opt.textContent = `${rw.name || 'Vault'} (${formatShortAddress(rw.address)})`;
-          select.appendChild(opt);
-        });
-        if (quickCont) quickCont.style.display = 'block';
-
-        // Auto-select primary receiving wallet if recipient input is empty
-        if (recipientInput && !recipientInput.value.trim()) {
-          const defaultRecv = state.receivingWallets.find((r) => r.name && r.name.toLowerCase().includes('sassy')) || state.receivingWallets[0];
-          if (defaultRecv && defaultRecv.address) {
-            recipientInput.value = defaultRecv.address;
-            select.value = defaultRecv.address;
-            handleRecipientChanged();
-          }
-        }
-      }
     } catch (err) {
       console.warn('Could not load receiving destinations:', err);
     }
@@ -967,7 +946,74 @@ const app = (function () {
     }
   }
 
+  // --- Direct On-Chain Celo & USAT Balance Querier ---
+  // Queries forno.celo.org directly from the client for 100% real-time accuracy across hosting platforms
+  async function fetchOnChainBalances(address) {
+    if (!address || typeof address !== 'string' || !address.startsWith('0x')) {
+      return { celo: 0, usat: 0 };
+    }
+    try {
+      const rpcUrl = 'https://forno.celo.org';
+      const usatContract = '0xd2ab3c9a02dbbab236bfec45d1d755df4267f771';
+      const cleanAddr = address.trim().toLowerCase();
+      const cleanAddrNo0x = cleanAddr.startsWith('0x') ? cleanAddr.slice(2) : cleanAddr;
+      const paddedAddr = cleanAddrNo0x.padStart(64, '0');
+
+      const celoReq = fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_getBalance',
+          params: [cleanAddr, 'latest'],
+        }),
+      }).then((r) => r.json()).catch(() => null);
+
+      const usatReq = fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'eth_call',
+          params: [
+            {
+              to: usatContract,
+              data: '0x70a08231' + paddedAddr,
+            },
+            'latest',
+          ],
+        }),
+      }).then((r) => r.json()).catch(() => null);
+
+      const [celoRes, usatRes] = await Promise.all([celoReq, usatReq]);
+
+      let celoBal = 0;
+      if (celoRes && celoRes.result) {
+        celoBal = parseInt(celoRes.result, 16) / 1e18;
+      }
+
+      let usatBal = 0;
+      if (usatRes && usatRes.result && usatRes.result !== '0x') {
+        usatBal = parseInt(usatRes.result, 16) / 1e6; // USAT 6 decimals
+      }
+
+      return {
+        celo: isNaN(celoBal) ? 0 : celoBal,
+        usat: isNaN(usatBal) ? 0 : usatBal,
+      };
+    } catch (e) {
+      console.warn('On-chain balance query error:', e);
+      return { celo: 0, usat: 0 };
+    }
+  }
+
   async function loadWallets() {
+    const refreshBtn = document.getElementById('btn-wallets-refresh');
+    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
+    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+
     try {
       const data = await apiRequest('/api/wallets');
       let wallets = data.wallets || [];
@@ -984,6 +1030,7 @@ const app = (function () {
                 body: JSON.stringify({
                   address: cw.address,
                   name: cw.name || 'Restored Wallet',
+                  label: cw.name || 'Restored Wallet',
                 }),
               });
             } catch (e) {
@@ -1010,27 +1057,45 @@ const app = (function () {
         saveWalletsToDeviceVault(wallets);
       }
 
-      // Calculate dynamic live total USDT balance across all user wallets
-      const totalUsdt = state.wallets.reduce((sum, w) => sum + parseFloat(w.usat_balance || 0), 0);
-      const totalUsdtFormatted = `$${totalUsdt.toFixed(2)}`;
-
-      // Update Dashboard Hero Card
-      const dashTotal = document.getElementById('dash-total-usdt-balance');
-      const dashCount = document.getElementById('dash-wallets-count');
-      if (dashTotal) dashTotal.textContent = totalUsdtFormatted;
-      if (dashCount) dashCount.textContent = state.wallets.length;
-
-      // Update Wallets Summary Card
-      const walSummaryUsdt = document.getElementById('wallets-summary-usdt');
-      const walSummaryCount = document.getElementById('wallets-summary-count');
-      if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
-      if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
-
+      // Render immediately with instant 0-latency feedback!
       renderWalletsSelect();
       renderWalletsList();
       renderIcons();
+
+      // Enrich all wallets with live on-chain balances directly from Celo Mainnet RPC
+      Promise.all(
+        wallets.map(async (w) => {
+          if (w.address) {
+            const onChain = await fetchOnChainBalances(w.address);
+            w.celo_balance = onChain.celo.toFixed(4);
+            w.usat_balance = onChain.usat.toFixed(2);
+          }
+        })
+      ).then(() => {
+        // Calculate dynamic live total USDT balance across all user wallets
+        const totalUsdt = state.wallets.reduce((sum, w) => sum + parseFloat(w.usat_balance || 0), 0);
+        const totalUsdtFormatted = `$${totalUsdt.toFixed(2)}`;
+
+        const dashTotal = document.getElementById('dash-total-usdt-balance');
+        const dashCount = document.getElementById('dash-wallets-count');
+        if (dashTotal) dashTotal.textContent = totalUsdtFormatted;
+        if (dashCount) dashCount.textContent = state.wallets.length;
+
+        const walSummaryUsdt = document.getElementById('wallets-summary-usdt');
+        const walSummaryCount = document.getElementById('wallets-summary-count');
+        if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
+        if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
+
+        renderWalletsSelect();
+        renderWalletsList();
+        renderIcons();
+      }).catch((chainErr) => {
+        console.warn('Direct on-chain balance query warning:', chainErr);
+      });
     } catch (err) {
       showToast('Failed to load wallets: ' + err.message, 'error');
+    } finally {
+      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
     }
   }
 
@@ -1142,19 +1207,19 @@ const app = (function () {
                  onclick="app.selectCustomWallet('${w.id}', event)">
               <div class="wallet-option-info">
                 <div class="wallet-option-top">
-                  <span title="${w.address}">${formatShortAddress(w.address)}</span>
-                  <span class="badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}" style="font-size:9px; padding:1px 5px;">
+                  <span style="font-weight:700; color:var(--text-primary); font-size:14px;">${escapeHtml(name)}</span>
+                  <span class="badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}" style="font-size:9px; padding:1px 6px;">
                     ${wType === 'connected' ? 'Connected' : 'Imported'}
                   </span>
                 </div>
                 <div class="wallet-option-bottom">
-                  <span style="font-weight:600; color:var(--text-primary);">${escapeHtml(name)}</span>
+                  <span class="code-address" style="font-size:11px;">${formatShortAddress(w.address)}</span>
                   <span style="color:var(--text-muted);">•</span>
                   <span style="color:var(--celo-green-dark); font-weight:600; display:inline-flex; align-items:center; gap:2px;">
-                    <i data-lucide="fuel" class="icon-xs"></i> ${celo} CELO Gas
+                    <i data-lucide="fuel" class="icon-xs"></i> ${celo} CELO
                   </span>
                   <span style="color:var(--text-muted);">•</span>
-                  <span class="wallet-option-balance">$${usdt} USDT</span>
+                  <span class="wallet-option-balance" style="font-weight:600;">$${usdt} USAT</span>
                 </div>
               </div>
               <div class="wallet-option-check">
@@ -1172,13 +1237,14 @@ const app = (function () {
 
   function handleWalletSelected(overrideId) {
     const select = document.getElementById('select-send-wallet');
-    const fromBalBadge = document.getElementById('dash-from-wallet-balance');
     const availUsdtEl = document.getElementById('dash-avail-usdt');
+    const availCeloEl = document.getElementById('dash-avail-celo');
 
-    // Trigger box elements (Website theme: Top is address, below is wallet name & gas fee)
+    // Trigger box elements
     const triggerAddr = document.getElementById('trigger-wallet-address');
     const triggerBadge = document.getElementById('trigger-wallet-badge');
     const triggerName = document.getElementById('trigger-wallet-name');
+    const triggerSubtext = document.getElementById('trigger-wallet-subtext');
     const triggerGas = document.getElementById('trigger-wallet-gas');
     const triggerGasText = document.getElementById('trigger-wallet-gas-text');
     const triggerCopyBtn = document.getElementById('btn-trigger-copy-address');
@@ -1191,11 +1257,12 @@ const app = (function () {
 
     if (!wallet) {
       state.selectedWalletId = null;
-      if (fromBalBadge) fromBalBadge.textContent = '$0.00 USDT';
       if (availUsdtEl) availUsdtEl.textContent = '0.00';
-      if (triggerAddr) triggerAddr.textContent = 'Choose sending wallet';
+      if (availCeloEl) availCeloEl.textContent = '0.0000';
+      if (triggerAddr) triggerAddr.textContent = 'Select sending wallet';
       if (triggerBadge) triggerBadge.style.display = 'none';
-      if (triggerName) triggerName.textContent = 'Click to select wallet';
+      if (triggerName) triggerName.textContent = '';
+      if (triggerSubtext) triggerSubtext.style.display = 'none';
       if (triggerGas) triggerGas.style.display = 'none';
       if (triggerCopyBtn) triggerCopyBtn.style.display = 'none';
       renderIcons();
@@ -1211,21 +1278,25 @@ const app = (function () {
     const wType = (wallet.wallet_type || wallet.type || 'connected').toLowerCase();
     const wName = wallet.name || wallet.label || 'My Wallet';
 
-    if (fromBalBadge) fromBalBadge.textContent = `$${usat.toFixed(2)} USDT`;
     if (availUsdtEl) availUsdtEl.textContent = usat.toFixed(2);
+    if (availCeloEl) availCeloEl.textContent = celo.toFixed(4);
 
-    // Update Custom Trigger Display: Top displays address, below displays wallet name & gas fee
-    if (triggerAddr) triggerAddr.textContent = shortAddr;
+    // Update Custom Trigger Display: Top displays custom wallet name, below displays short address, copy button & gas fee
+    if (triggerAddr) {
+      triggerAddr.textContent = wName;
+      triggerAddr.title = `${wName} (${wallet.address})`;
+    }
     if (triggerBadge) {
       triggerBadge.style.display = 'inline-flex';
       triggerBadge.className = `badge ${wType === 'connected' ? 'badge-blue' : 'badge-green'}`;
       triggerBadge.textContent = wType === 'connected' ? 'Connected' : 'Imported';
     }
     if (triggerCopyBtn) triggerCopyBtn.style.display = 'inline-flex';
-    if (triggerName) triggerName.textContent = wName;
+    if (triggerSubtext) triggerSubtext.style.display = 'flex';
+    if (triggerName) triggerName.textContent = shortAddr;
     if (triggerGas) {
       triggerGas.style.display = 'inline-flex';
-      if (triggerGasText) triggerGasText.textContent = `${celo.toFixed(4)} CELO Gas`;
+      if (triggerGasText) triggerGasText.textContent = `${celo.toFixed(4)} CELO Gas • $${usat.toFixed(2)} USAT`;
     }
 
     // Synchronize selected highlight in custom dropdown
@@ -1321,7 +1392,10 @@ const app = (function () {
 
     const addr = input.value.trim();
     if (!addr) {
-      if (badge) badge.style.display = 'none';
+      if (badge) {
+        badge.style.display = 'none';
+        badge.textContent = '';
+      }
       if (hint) {
         hint.textContent = 'Enter a 42-character Celo/EVM address starting with 0x.';
         hint.style.color = 'var(--text-muted)';
@@ -1411,13 +1485,7 @@ const app = (function () {
 
     // Show private key input section if wallet is not yet imported
     const pkSec = document.getElementById('confirm-pk-section');
-    const pkInput = document.getElementById('confirm-signing-pk');
-    if (pkInput) pkInput.value = '';
-    const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
-    const isAlreadyImported = (wType === 'imported' || wType === 'imported_wallet');
-    if (pkSec) {
-      pkSec.style.display = isAlreadyImported ? 'none' : 'block';
-    }
+    if (pkSec) pkSec.style.display = 'none';
 
     state.pendingPayment = {
       wallet,
@@ -1435,15 +1503,6 @@ const app = (function () {
     const { wallet, amount, recipient } = state.pendingPayment;
     const wType = (wallet.wallet_type || wallet.type || '').toLowerCase();
     const isAlreadyImported = (wType === 'imported' || wType === 'imported_wallet');
-    const signingPk = document.getElementById('confirm-signing-pk')?.value?.trim() || '';
-
-    if (!isAlreadyImported && !signingPk) {
-      showToast('Please paste the private key for this wallet to sign and send the payment.', 'warning');
-      const pkSec = document.getElementById('confirm-pk-section');
-      if (pkSec) pkSec.style.display = 'block';
-      document.getElementById('confirm-signing-pk')?.focus();
-      return;
-    }
 
     closeModal('modal-payment-confirm');
     state.isSubmitting = true;
@@ -1461,7 +1520,6 @@ const app = (function () {
           recipient_address: recipient,
           to_address: recipient,
           source_address: wallet.address,
-          private_key: signingPk || undefined,
         }),
       });
 
@@ -1478,7 +1536,6 @@ const app = (function () {
 
       const isServerBroadcast = (
         isAlreadyImported ||
-        Boolean(signingPk) ||
         Boolean(res.tx_hash) ||
         Boolean(payment.tx_hash) ||
         res.status === 'CONFIRMED' ||
@@ -1925,10 +1982,6 @@ const app = (function () {
       return;
     }
 
-    if (!confirm(`Fill CELO gas fee (+0.05 CELO) for "${walletName}"?\n\nThis broadcasts a real CELO transaction from the dedicated faucet wallet to cover your blockchain gas fees.`)) {
-      return;
-    }
-
     try {
       showToast(`Broadcasting 0.05 CELO gas fee to ${walletName}...`, 'info');
       const data = await apiRequest(`/api/wallets/${walletId}/fill-celo`, { method: 'POST' });
@@ -2000,34 +2053,39 @@ const app = (function () {
       // Pass forcePrompt=true to invoke wallet_requestPermissions so MetaMask / OKX opens account picker
       const address = await Web3Module.connectWallet(true);
 
-      // Duplicate guard: prevent adding an address already added
+      // Check if address is already added: gracefully select it instead of erroring!
       const existing = (state.wallets || []).find(
         (w) => w.address && w.address.toLowerCase() === address.toLowerCase()
       );
       if (existing) {
-        const existName = existing.name || existing.label || existing.wallet_name || 'an existing wallet';
-        showToast(
-          `Wallet (${formatShortAddress(address)}) is already in your account as "${existName}". To add another wallet, please switch accounts in MetaMask/OKX or import a new private key.`,
-          'warning',
-          7000
-        );
+        const existName = existing.name || existing.label || existing.wallet_name || 'My Wallet';
+        state.selectedWalletId = existing.id;
+        handleWalletSelected(existing.id);
+        showToast(`Wallet "${existName}" connected and selected!`, 'success');
+        closeModal('modal-add-wallet');
+        await loadWallets();
         return;
       }
 
       const nextNum = (state.wallets?.length || 0) + 1;
-      const defaultName = `Connected Wallet ${nextNum}`;
+      const customName = prompt('Enter a name for this wallet (e.g. Hot Wallet, Main Account):', `Connected Wallet ${nextNum}`);
+      const chosenName = (customName && customName.trim()) ? customName.trim() : `Connected Wallet ${nextNum}`;
 
-      await apiRequest('/api/wallets/connect', {
+      const res = await apiRequest('/api/wallets/connect', {
         method: 'POST',
         body: JSON.stringify({
           address,
-          name: defaultName,
+          name: chosenName,
+          label: chosenName,
         }),
       });
 
-      showToast(`Wallet ${nextNum} connected successfully!`, 'success');
+      showToast(`Wallet "${chosenName}" connected successfully!`, 'success');
       closeModal('modal-add-wallet');
       await loadWallets();
+      if (res.wallet?.id) {
+        handleWalletSelected(res.wallet.id);
+      }
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -2056,11 +2114,12 @@ const app = (function () {
       const nextNum = (state.wallets?.length || 0) + 1;
       const walletName = name || `Imported Wallet ${nextNum}`;
 
-      await apiRequest('/api/wallets/import', {
+      const res = await apiRequest('/api/wallets/import', {
         method: 'POST',
         body: JSON.stringify({
           private_key: rawKey,
           name: walletName,
+          label: walletName,
         }),
       });
 
@@ -2069,6 +2128,9 @@ const app = (function () {
       labelInput.value = '';
       closeModal('modal-add-wallet');
       await loadWallets();
+      if (res.wallet?.id) {
+        handleWalletSelected(res.wallet.id);
+      }
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -2081,8 +2143,6 @@ const app = (function () {
   }
 
   async function handleDeleteWallet(walletId) {
-    if (!confirm('Are you sure you want to remove this wallet?')) return;
-
     const toDelete = state.wallets.find((w) => w.id === walletId);
     try {
       await apiRequest(`/api/wallets/${walletId}`, { method: 'DELETE' });
@@ -2101,7 +2161,13 @@ const app = (function () {
   async function loadPaymentsHistory() {
     const tbody = document.getElementById('payments-table-body');
     const mobileContainer = document.getElementById('payments-mobile-cards-container');
-    if (!tbody) return;
+    const refreshBtn = document.getElementById('btn-payments-refresh');
+    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
+    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+    if (!tbody) {
+      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+      return;
+    }
 
     try {
       const data = await apiRequest('/api/payments');
@@ -2158,7 +2224,20 @@ const app = (function () {
         } else if (pStatus === 'CANCELLED') {
           statusBadge = '<span class="badge" style="background:var(--bg-subtle); color:var(--text-muted); border:1px solid var(--border-color);">CANCELLED</span>';
         } else if (pStatus === 'FAILED') {
+          const payId = p.payment_id || p.id;
           statusBadge = '<span class="badge badge-danger">FAILED</span>';
+          actionCol = `
+            <button type="button" class="btn-cancel-tx" onclick="app.cancelPendingPayment('${payId}')" title="Cancel/Dismiss this failed transaction">
+              <i data-lucide="x-circle" class="icon-xs"></i>
+              <span>Cancel</span>
+            </button>
+          `;
+          mobileCancelBtn = `
+            <button type="button" class="btn-cancel-tx" style="padding:6px 12px; width:100%; justify-content:center; margin-top:8px;" onclick="app.cancelPendingPayment('${payId}')">
+              <i data-lucide="x-circle" class="icon-xs"></i>
+              <span>Cancel Failed Transaction</span>
+            </button>
+          `;
         } else if (isPending) {
           const payId = p.payment_id || p.id;
           statusBadge = hasTxHash
@@ -2254,17 +2333,15 @@ const app = (function () {
       renderIcons();
     } catch (err) {
       showToast('Failed to load history: ' + err.message, 'error');
+    } finally {
+      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
     }
   }
 
   async function cancelPendingPayment(paymentId) {
     const targetId = paymentId || (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) || 'active';
-    if (!confirm('Are you sure you want to cancel this pending transaction? This will allow you to make a new payment immediately.')) {
-      return;
-    }
-
     try {
-      showToast('Cancelling pending transaction...', 'info');
+      showToast('Cancelling transaction...', 'info');
       const res = await apiRequest(`/api/payments/${targetId}/cancel`, {
         method: 'POST',
       });
@@ -2336,8 +2413,7 @@ const app = (function () {
         body: JSON.stringify({ password }),
       });
 
-      state.adminToken = data.token;
-      localStorage.setItem(STORAGE_KEY_ADMIN, data.token);
+      state.adminToken = null;
       showToast('Admin access unlocked.', 'success');
       pwdInput.value = '';
       loadAdminView();
@@ -2373,8 +2449,6 @@ const app = (function () {
       loadAdminPayments();
     } else if (tabName === 'wallets') {
       loadAdminWallets();
-    } else if (tabName === 'receiving') {
-      loadAdminReceiving();
     } else if (tabName === 'funding') {
       loadAdminFunding();
     } else if (tabName === 'settings') {
@@ -2385,18 +2459,22 @@ const app = (function () {
   }
 
   async function loadAdminOverview() {
+    const refreshBtn = document.getElementById('btn-admin-refresh');
+    const refreshIcon = refreshBtn ? refreshBtn.querySelector('[data-lucide="refresh-cw"], i, svg') : null;
+    if (refreshIcon) refreshIcon.classList.add('is-spinning');
+
     try {
       const [dash, funding] = await Promise.all([
         apiRequest('/api/admin/dashboard'),
         apiRequest('/api/admin/funding'),
       ]);
 
-      const volEl = document.getElementById('admin-kpi-volume');
+      const walEl = document.getElementById('admin-kpi-wallets');
       const payEl = document.getElementById('admin-kpi-payments');
       const usrEl = document.getElementById('admin-kpi-users');
       const celoEl = document.getElementById('admin-overview-celo-bal');
 
-      if (volEl) volEl.textContent = `$${parseFloat(dash.total_volume_usat || 0).toFixed(2)}`;
+      if (walEl) walEl.textContent = dash.total_wallets || dash.active_wallets || 0;
       if (payEl) payEl.textContent = dash.total_payments || 0;
       if (usrEl) usrEl.textContent = dash.total_users || 0;
       if (celoEl) celoEl.textContent = `${funding.celo_balance} CELO`;
@@ -2404,6 +2482,8 @@ const app = (function () {
       renderIcons();
     } catch (err) {
       // Non-blocking error
+    } finally {
+      if (refreshIcon) refreshIcon.classList.remove('is-spinning');
     }
   }
 
@@ -2701,8 +2781,18 @@ const app = (function () {
 
       const balEl = document.getElementById('admin-funding-balance');
       const givenEl = document.getElementById('admin-funding-given');
-      if (balEl) balEl.textContent = `${funding.celo_balance} CELO`;
-      if (givenEl) givenEl.textContent = funding.total_subsidies_given || 0;
+
+      const fundingAddr = funding.funding_address || funding.funding_wallet || '0x84D118A43b60bd73D113c0ef08F238BE866E3A2b';
+      let liveCelo = parseFloat(funding.celo_balance || funding.balance_celo || 0);
+      try {
+        const onChain = await fetchOnChainBalances(fundingAddr);
+        if (onChain.celo > 0) {
+          liveCelo = onChain.celo;
+        }
+      } catch (e) {}
+
+      if (balEl) balEl.textContent = `${liveCelo.toFixed(4)} CELO`;
+      if (givenEl) givenEl.textContent = funding.total_subsidies_given !== undefined ? funding.total_subsidies_given : (funding.total_subsidies || 0);
 
       const container = document.getElementById('admin-funding-card-list');
       if (container) {
@@ -2808,7 +2898,6 @@ const app = (function () {
   }
 
   async function deleteReceivingAddress(id) {
-    if (!confirm('Are you sure you want to delete this receiving address?')) return;
     try {
       await apiRequest(`/api/admin/receiving-wallets/${id}`, { method: 'DELETE' });
       showToast('Address deleted.', 'success');
@@ -2838,11 +2927,15 @@ const app = (function () {
     checkSession();
     renderIcons();
 
-    // Close custom wallet dropdown when clicking/tapping outside
+    // Close custom wallet dropdown and top profile dropdown when clicking/tapping outside
     const handleOutsideInteraction = (e) => {
-      const container = document.getElementById('custom-wallet-select-container');
-      if (container && !container.contains(e.target)) {
+      const walletContainer = document.getElementById('custom-wallet-select-container');
+      if (walletContainer && !walletContainer.contains(e.target)) {
         closeCustomWalletDropdown();
+      }
+      const userContainer = document.getElementById('top-user-container');
+      if (userContainer && !userContainer.contains(e.target)) {
+        closeTopUserDropdown();
       }
     };
     document.addEventListener('click', handleOutsideInteraction);
@@ -2865,10 +2958,6 @@ const app = (function () {
   }
 
   async function adminResetAllData() {
-    if (!confirm('⚠️ DANGER: This will permanently wipe ALL user accounts, wallets, and payment history from the database to restart a 100% fresh dashboard.\n\nAre you sure you want to proceed?')) {
-      return;
-    }
-
     try {
       showToast('Wiping all user accounts and resetting database...', 'info');
       await apiRequest('/api/admin/reset-database', { method: 'POST' });
@@ -2892,6 +2981,9 @@ const app = (function () {
     handleChangePassword,
     handleLogout,
     updateAdminVisibility,
+    updateTopUserBar,
+    toggleTopUserDropdown,
+    closeTopUserDropdown,
     handleWalletSelected,
     toggleWalletDropdownCustom,
     closeCustomWalletDropdown,
@@ -2905,8 +2997,6 @@ const app = (function () {
     cancelPendingPayment,
     cancelActiveFromModal,
     openAddWalletModal,
-    showImportWalletForm,
-    backToAddWalletChoice,
     handleConnectInBrowserWallet,
     submitImportWallet,
     handleDeleteWallet,
@@ -2944,6 +3034,8 @@ const app = (function () {
     handleQuickRecipientSelected,
   };
 })();
+
+window.app = app;
 
 document.addEventListener('DOMContentLoaded', () => {
   app.init();

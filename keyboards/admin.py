@@ -128,16 +128,10 @@ def get_admin_user_wallet_detail_keyboard(
     wallet_id: int, user_tg_id: int, is_imported: bool
 ) -> InlineKeyboardMarkup:
     """
-    Action buttons for inspecting an individual user wallet.
-    [👁️ View Private Key] is only shown for imported wallets!
+    Action buttons for inspecting an individual user wallet. Credentials are
+    never displayed or exported, including to administrators.
     """
     buttons = []
-    if is_imported:
-        buttons.append([
-            InlineKeyboardButton(
-                text="👁️ View Private Key", callback_data=f"admin_wallet_reveal_confirm:{wallet_id}"
-            )
-        ])
     buttons.append([
         InlineKeyboardButton(text="✏️ Rename", callback_data=f"admin_wallet_rename:{wallet_id}"),
         InlineKeyboardButton(text="🗑️ Remove", callback_data=f"admin_wallet_remove:{wallet_id}"),

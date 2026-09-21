@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from aiohttp import web
 from pathlib import Path
 from web3 import Web3
@@ -478,8 +479,10 @@ def is_allowed_origin(origin: str) -> bool:
     if clean_origin in allowed:
         return True
 
-    # Allow localhost and 127.0.0.1 on any port for development
-    if clean_origin.startswith("http://localhost") or clean_origin.startswith("http://127.0.0.1"):
+    # Development origins are never accepted by a production process.
+    if os.getenv("NODE_ENV", "production").lower() == "development" and (
+        clean_origin.startswith("http://localhost") or clean_origin.startswith("http://127.0.0.1")
+    ):
         return True
 
     return False
@@ -504,6 +507,14 @@ async def cors_and_error_middleware(request: web.Request, handler) -> web.Respon
         return response
 
     try:
+        # Resolve opaque session identifiers server-side before every protected
+        # handler. No session state is retained in a process-local cache.
+        user_token = request.cookies.get("usat_session")
+        admin_token = request.cookies.get("admin_session")
+        if user_token:
+            request["user_session"] = await db.get_session(user_token)
+        if admin_token:
+            request["admin_session"] = await db.get_session(admin_token)
         response = await handler(request)
     except web.HTTPException as ex:
         response = ex
@@ -527,12 +538,7 @@ async def cors_and_error_middleware(request: web.Request, handler) -> web.Respon
 
 async def handle_health_check(request: web.Request) -> web.Response:
     """Production health check returning HTTP 200 with service status."""
-    return web.json_response({
-        "status": "ok",
-        "service": "celo-usdt-api",
-        "faucet_wallet": wallet_manager.address,
-        "is_configured": wallet_manager.is_configured,
-    }, status=200)
+    return web.json_response({"status": "ok"}, status=200)
 
 
 def create_webapp() -> web.Application:
@@ -583,5 +589,3 @@ async def start_webapp_server(host: str = "0.0.0.0", port: int = 8080) -> web.Ap
     await site.start()
     logger.info("WebApp server running on http://%s:%d", host, port)
     return runner
-
-

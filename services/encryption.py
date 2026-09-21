@@ -20,8 +20,9 @@ class EncryptionService:
 
     def __init__(self, master_key_hex: Optional[str] = None) -> None:
         key_str = master_key_hex or config.wallet_encryption_key
-        self._key_bytes = self._derive_key_bytes(key_str)
-        self._aesgcm = AESGCM(self._key_bytes)
+        self._configured = bool(key_str)
+        self._key_bytes = self._derive_key_bytes(key_str) if key_str else None
+        self._aesgcm = AESGCM(self._key_bytes) if self._key_bytes else None
 
     @staticmethod
     def _derive_key_bytes(key_input: str) -> bytes:
@@ -45,6 +46,8 @@ class EncryptionService:
         Returns:
             Format: '<nonce_hex>:<ciphertext_and_tag_hex>'
         """
+        if not self._configured or not self._aesgcm:
+            raise RuntimeError("WALLET_ENCRYPTION_KEY must be configured before importing wallets.")
         if not plaintext:
             raise ValueError("Cannot encrypt empty string.")
         
@@ -68,6 +71,8 @@ class EncryptionService:
         Raises:
             ValueError: If payload format or authentication tag verification fails.
         """
+        if not self._configured or not self._aesgcm:
+            raise RuntimeError("WALLET_ENCRYPTION_KEY must be configured before using imported wallets.")
         if not encrypted_payload or ":" not in encrypted_payload:
             raise ValueError("Invalid encrypted payload format.")
         

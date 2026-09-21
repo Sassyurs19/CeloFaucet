@@ -489,39 +489,26 @@ async def cb_admin_user_wallet_view(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_wallet_reveal_confirm:"))
 async def cb_admin_wallet_reveal_confirm(callback: CallbackQuery) -> None:
-    """Show sensitive warning prompt before revealing private key."""
+    """Credential export is deliberately disabled for imported wallets."""
     user_id = callback.from_user.id if callback.from_user else 0
     if not is_authorized_admin(user_id):
         return
 
-    wallet_id = int(callback.data.split(":")[1])
-    warning_text = (
-        "⚠️ <b>SENSITIVE INFORMATION</b>\n\n"
-        "<i>You are about to reveal the private key for this wallet.</i>\n\n"
-        "<i>Anyone with this key can control the wallet and its assets.</i>"
-    )
-    if callback.message:
-        await callback.message.edit_text(
-            text=warning_text,
-            reply_markup=get_admin_reveal_confirm_keyboard(wallet_id),
-            parse_mode="HTML",
-        )
-    await callback.answer()
+    await callback.answer("Private keys cannot be displayed or exported.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("admin_wallet_reveal_do:"))
 async def cb_admin_wallet_reveal_do(callback: CallbackQuery, bot: Bot) -> None:
-    """
-    Decrypt and display the private key to the authorized admin with automatic deletion.
-    - Strict ADMIN_TELEGRAM_ID check.
-    - Decrypt only immediately before display.
-    - Never log decrypted key.
-    - Schedule automatic message deletion after 60 seconds.
-    """
+    """Credential export is deliberately disabled for imported wallets."""
     user_id = callback.from_user.id if callback.from_user else 0
     if not is_authorized_admin(user_id):
         await callback.answer("Unauthorized.", show_alert=True)
         return
+
+    await callback.answer("Private keys cannot be displayed or exported.", show_alert=True)
+    return
+
+    """Legacy credential-reveal code retained below only for migration reference."""
 
     wallet_id = int(callback.data.split(":")[1])
     wallet = await db.get_wallet_by_id_admin(wallet_id)

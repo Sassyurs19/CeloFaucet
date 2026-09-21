@@ -7,6 +7,7 @@ Maintains users, dual-type wallets, admin receiving addresses, and USAT payment 
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -14,6 +15,7 @@ import aiosqlite
 from web3 import Web3
 
 from config import config
+from services.postgres import PostgresConnection
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +55,43 @@ class Database:
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or config.database_path
+        self._pg_pool = None
+
+    @property
+    def using_postgres(self) -> bool:
+        return bool(config.database_url)
+
+    async def _postgres_pool(self):
+        if self._pg_pool is None:
+            import asyncpg
+            try:
+                self._pg_pool = await asyncpg.create_pool(
+                    config.database_url, min_size=1, max_size=10, command_timeout=30
+                )
+            except Exception:
+                # Do not include the connection URL (which can embed credentials) in errors or logs.
+                raise RuntimeError("PostgreSQL DATABASE_URL connection failed.") from None
+        return self._pg_pool
 
     @asynccontextmanager
     async def connect(self) -> AsyncIterator[aiosqlite.Connection]:
         """Context manager yielding a properly configured connection."""
+        production = os.getenv("NODE_ENV", "development").lower() == "production"
+        if production and not config.database_url:
+            raise RuntimeError("DATABASE_URL is required in production; SQLite is disabled.")
+        if self.using_postgres:
+            pool = await self._postgres_pool()
+            async with pool.acquire() as raw:
+                transaction = raw.transaction()
+                await transaction.start()
+                try:
+                    yield PostgresConnection(raw)
+                except Exception:
+                    await transaction.rollback()
+                    raise
+                else:
+                    await transaction.commit()
+            return
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -66,7 +101,10 @@ class Database:
             yield conn
 
     async def init_db(self) -> None:
-        """Initialize SQLite database tables, perform migrations, and seed defaults."""
+        """Initialize the selected database without deleting or seeding records."""
+        if self.using_postgres:
+            await self._init_postgres()
+            return
         async with self.connect() as conn:
             # 1. Users table
             await conn.execute(
@@ -257,93 +295,40 @@ class Database:
                 );
                 """
             )
-
-            # Seed default receiving wallet from FAUCET_ADDRESS if empty and configured
-            async with conn.execute("SELECT COUNT(*) as cnt FROM receiving_wallets;") as cur:
-                row = await cur.fetchone()
-                if row and row["cnt"] == 0 and config.faucet_address:
-                    try:
-                        chk = Web3.to_checksum_address(config.faucet_address)
-                        await conn.execute(
-                            "INSERT INTO receiving_wallets (name, address, is_active) VALUES ('Admin Wallet', ?, 1);",
-                            (chk,),
-                        )
-                        logger.info("Configured default receiving wallet from FAUCET_ADDRESS: %s", chk)
-                    except Exception:
-                        pass
-
-            # Auto-seed Master Admin account (+918142177207 / Sasi#123) if missing or without password
-            norm_admin = normalize_mobile("8142177207")
-            async with conn.execute(
-                "SELECT id, password_hash FROM users WHERE normalized_mobile = ? OR mobile_number LIKE '%8142177207%';",
-                (norm_admin,),
-            ) as cur:
-                admin_row = await cur.fetchone()
-                if not admin_row:
-                    try:
-                        from argon2 import PasswordHasher
-                        ph = PasswordHasher()
-                        admin_hash = ph.hash("Sasi#123")
-                        await conn.execute(
-                            """
-                            INSERT INTO users (telegram_id, full_name, first_name, username, mobile_number, normalized_mobile, password_hash, status)
-                            VALUES (8142177207, 'Sasidhar', 'Sasidhar', 'sasidhar', '+918142177207', ?, ?, 'active');
-                            """,
-                            (norm_admin, admin_hash),
-                        )
-                        logger.info("Master Admin (+918142177207 / Sasidhar) seeded successfully.")
-                    except Exception as ex:
-                        logger.warning("Notice seeding master admin user: %s", ex)
-                elif not admin_row["password_hash"]:
-                    try:
-                        from argon2 import PasswordHasher
-                        ph = PasswordHasher()
-                        admin_hash = ph.hash("Sasi#123")
-                        await conn.execute(
-                            "UPDATE users SET password_hash = ? WHERE id = ?;",
-                            (admin_hash, admin_row["id"]),
-                        )
-                        logger.info("Master Admin password hash updated.")
-                    except Exception as ex:
-                        logger.warning("Notice updating master admin password: %s", ex)
-
-            # Auto-seed standard 10 wallets for Master Admin (+918142177207)
-            async with conn.execute(
-                "SELECT id FROM users WHERE normalized_mobile = ? OR mobile_number LIKE '%8142177207%';",
-                (norm_admin,),
-            ) as cur:
-                admin_user = await cur.fetchone()
-                if admin_user:
-                    admin_uid = admin_user["id"]
-                    async with conn.execute(
-                        "SELECT COUNT(*) as cnt FROM user_wallets WHERE user_id = ? OR telegram_id = 8142177207;",
-                        (admin_uid,),
-                    ) as w_cur:
-                        w_cnt_row = await w_cur.fetchone()
-                        if w_cnt_row and w_cnt_row["cnt"] == 0:
-                            default_wallets = [
-                                ('Vamsi', '0x2A984Ee45AE0910A2bb9257D68754F1e8Cd9F26b'),
-                                ('Prem 1', '0x17CE4F4456a96219e3c2f26CaBf128aDe9118563'),
-                                ('Prem 2', '0xC7eaa8F19EDEE91deddEc928B840aDe4739590e7'),
-                                ('Prem 4', '0xefc1B967FA0211DDA5b618340094059b45aB52cf'),
-                                ('Eswar Nayak', '0x14Dbe0cB26400F81FD222Bf7f84adAAE8a6E5dA5'),
-                                ('Vamsi 1', '0x8e53785728208d1Dd5C5D202Ebe21039C0F52294'),
-                                ('Vamsi 2', '0x32775557961F4b1AA77352F754a7899633705F7e'),
-                                ('Vamsi 3', '0x88E59baa3BaBDBAc2C444af5BCB4d158ec4130b2'),
-                                ('Prem 5', '0x130015a10B5e2D4FDa95ED2e28aeEb9dAF05C402'),
-                                ('Prem 6', '0x803314F355E544Ed5a9767Ea0E64B56B7e0D905D'),
-                            ]
-                            for w_name, w_addr in default_wallets:
-                                await conn.execute(
-                                    """
-                                    INSERT INTO user_wallets (user_id, telegram_id, wallet_name, address, wallet_type)
-                                    VALUES (?, 8142177207, ?, ?, 'connected');
-                                    """,
-                                    (admin_uid, w_name, w_addr),
-                                )
-                            logger.info("Auto-seeded 10 default wallets for master admin.")
+            await conn.execute(
+                """CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY, user_id INTEGER,
+                    is_admin INTEGER DEFAULT 0, expires_at TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, invalidated_at TIMESTAMP
+                );"""
+            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expiration ON sessions(expires_at);")
 
             await conn.commit()
+
+    async def _init_postgres(self) -> None:
+        """Non-destructive PostgreSQL schema initialization for Render production."""
+        pool = await self._postgres_pool()
+        statements = [
+            """CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL UNIQUE, username TEXT, first_name TEXT, full_name TEXT, mobile_number TEXT, normalized_mobile TEXT, password_hash TEXT, status TEXT DEFAULT 'active', last_login_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS user_wallets (id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_name TEXT NOT NULL, address TEXT NOT NULL, wallet_type TEXT NOT NULL, encrypted_private_key TEXT, metadata TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS receiving_wallets (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS usat_payments (id BIGSERIAL PRIMARY KEY, payment_id TEXT NOT NULL UNIQUE, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_type TEXT NOT NULL, from_address TEXT NOT NULL, to_address TEXT NOT NULL, receiving_wallet_name TEXT NOT NULL, amount_usat TEXT NOT NULL DEFAULT '2.00', amount_base_units NUMERIC(78,0) NOT NULL, status TEXT NOT NULL, tx_hash TEXT UNIQUE, block_number BIGINT, celo_funded INTEGER DEFAULT 0, celo_fund_tx_hash TEXT UNIQUE, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS claims (id BIGSERIAL PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, telegram_id BIGINT NOT NULL, destination_address TEXT NOT NULL, amount NUMERIC, tx_hash TEXT UNIQUE, block_number BIGINT, status TEXT NOT NULL, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            """CREATE TABLE IF NOT EXISTS sessions (session_id TEXT PRIMARY KEY, user_id BIGINT REFERENCES users(id), is_admin BOOLEAN DEFAULT FALSE, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, invalidated_at TIMESTAMPTZ)""",
+            "CREATE INDEX IF NOT EXISTS idx_users_normalized_mobile ON users(normalized_mobile)",
+            "CREATE INDEX IF NOT EXISTS idx_wallets_owner ON user_wallets(user_id, telegram_id)",
+            "CREATE INDEX IF NOT EXISTS idx_wallets_address ON user_wallets(address)",
+            "CREATE INDEX IF NOT EXISTS idx_payments_owner ON usat_payments(user_id, telegram_id)",
+            "CREATE INDEX IF NOT EXISTS idx_payments_status ON usat_payments(status)",
+            "CREATE INDEX IF NOT EXISTS idx_payments_tx_hash ON usat_payments(tx_hash)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_expiration ON sessions(expires_at)",
+        ]
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for statement in statements:
+                    await conn.execute(statement)
 
     # --- User Management ---
 
@@ -587,11 +572,10 @@ class Database:
             await conn.execute("DELETE FROM usat_payments;")
             await conn.execute("DELETE FROM user_wallets;")
             await conn.execute("DELETE FROM claims;")
+            await conn.execute("DELETE FROM sessions;")
             await conn.execute("DELETE FROM users;")
-            try:
+            if not self.using_postgres:
                 await conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('users', 'user_wallets', 'usat_payments', 'claims');")
-            except Exception:
-                pass
             await conn.commit()
             try:
                 await conn.execute("VACUUM;")
@@ -1041,7 +1025,7 @@ class Database:
                 f"""
                 SELECT * FROM usat_payments 
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE', 'CONFIRMING')
                 ORDER BY created_at DESC LIMIT 1;
                 """,
                 user_ids + user_ids,
@@ -1102,8 +1086,7 @@ class Database:
                 f"""
                 SELECT payment_id, id FROM usat_payments
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
-                  AND tx_hash IS NULL
+                  AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED', 'CANCELLED')
                 ORDER BY created_at DESC LIMIT 1;
                 """,
                 user_ids + user_ids,
@@ -1582,6 +1565,30 @@ class Database:
             )
             await conn.commit()
 
+    # --- Durable browser sessions ---
+
+    async def create_session(self, session_id: str, user_id: int | None, is_admin: bool, expires_at: str) -> None:
+        async with self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO sessions (session_id, user_id, is_admin, expires_at) VALUES (?, ?, ?, ?);",
+                (session_id, user_id, bool(is_admin) if self.using_postgres else (1 if is_admin else 0), expires_at),
+            )
+            await conn.commit()
+
+    async def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        async with self.connect() as conn:
+            async with conn.execute(
+                "SELECT * FROM sessions WHERE session_id = ? AND invalidated_at IS NULL AND expires_at > CURRENT_TIMESTAMP;",
+                (session_id,),
+            ) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
+    async def invalidate_session(self, session_id: str) -> None:
+        async with self.connect() as conn:
+            await conn.execute("UPDATE sessions SET invalidated_at = CURRENT_TIMESTAMP WHERE session_id = ?;", (session_id,))
+            await conn.commit()
+
     async def is_bot_paused(self) -> bool:
         """Check whether payments are paused by admin."""
         val = await self.get_setting("payments_paused", "false")
@@ -1595,8 +1602,18 @@ class Database:
     async def is_faucet_paused(self) -> bool:
         return await self.is_bot_paused()
 
-    async def set_faucet_paused(self, paused: bool) -> None:
-        await self.set_bot_paused(paused)
+    async def reset_all_users_and_wallets(self) -> dict[str, Any]:
+        """Admin reset: wipe all users, connected/imported wallets, claims, and payment records for a clean slate."""
+        async with self.connect() as conn:
+            await conn.execute("DELETE FROM usat_payments;")
+            await conn.execute("DELETE FROM user_wallets;")
+            await conn.execute("DELETE FROM claims;")
+            await conn.execute("DELETE FROM sessions;")
+            await conn.execute("DELETE FROM users;")
+            if not self.using_postgres:
+                await conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('users', 'user_wallets', 'usat_payments', 'claims');")
+            await conn.commit()
+        return {"success": True, "message": "All user accounts, wallets, claims, and payments have been completely reset."}
 
 
 # Global database instance

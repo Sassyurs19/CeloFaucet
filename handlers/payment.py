@@ -278,7 +278,7 @@ async def cb_pay_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
     required_base_units = celo_client.get_payment_amount_base_units()  # 2,000,000 base units for 6 decimals
     usat_balance_units, usat_bal_str = await celo_client.get_usat_balance(source_addr)
 
-    if usat_balance_units < required_base_units and not config.dry_run:
+    if usat_balance_units < required_base_units:
         insufficient_text = (
             "❌ <b>INSUFFICIENT USAT BALANCE</b>\n\n"
             f"<b>Wallet:</b> {source_wallet['wallet_name']}\n"
