@@ -1298,8 +1298,8 @@ class Database:
                   AND c.tx_hash IS NOT NULL
                 ORDER BY created_at ASC, record_id ASC;
                 """,
-                [str(config.celo_funding_amount)]
-                + user_ids + user_ids + [wallet_address]
+                user_ids + user_ids + [wallet_address]
+                + [str(config.celo_funding_amount)]
                 + user_ids + user_ids + [wallet_address]
                 + user_ids + [wallet_address],
             ) as cur:

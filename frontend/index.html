@@ -361,9 +361,16 @@
                 </span>
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span id="recipient-format-badge" class="badge badge-green" style="display:none; font-size:10px; padding:1px 5px;"></span>
+                  <button type="button" class="saved-recipient-save" onclick="app.openSaveRecipientModal()">
+                    <i data-lucide="bookmark-plus" class="icon-xs"></i>
+                    <span>Save</span>
+                  </button>
                 </div>
               </div>
 
+              <select id="select-saved-recipient" class="form-input saved-recipient-select" onchange="app.handleSavedRecipientSelected()">
+                <option value="">Choose saved recipient</option>
+              </select>
               <input
                 type="text"
                 id="input-recipient-address"
@@ -378,15 +385,6 @@
               />
               <div id="recipient-validation-hint" style="font-size:11px; color:var(--text-muted); margin-top:4px;">
                 Enter a 42-character Celo/EVM address starting with 0x.
-              </div>
-              <div class="saved-recipient-actions">
-                <select id="select-saved-recipient" class="form-input saved-recipient-select" onchange="app.handleSavedRecipientSelected()">
-                  <option value="">Saved recipients</option>
-                </select>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openSaveRecipientModal()">
-                  <i data-lucide="bookmark-plus" class="icon-xs"></i>
-                  <span>Save address</span>
-                </button>
               </div>
             </div>
 
