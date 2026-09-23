@@ -1054,7 +1054,6 @@ const app = (function () {
     const workspaceList = document.getElementById('wallet-workspace-list');
     const workspaceBar = document.querySelector('.wallet-workspace-bar');
     const addWalletButton = document.getElementById('btn-wallet-add');
-    const createWorkspaceButton = document.getElementById('btn-create-workspace');
     const options = (state.workspaces || []).map((workspace) =>
       `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}${workspace.wallet_count !== undefined ? ` (${workspace.wallet_count})` : ''}</option>`
     ).join('');
@@ -1072,7 +1071,6 @@ const app = (function () {
         workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
           <div class="workspace-current"><span>${escapeHtml(activeWorkspace.name)}</span><small>${Number(activeWorkspace.wallet_count || 0)} wallets</small><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button></div>`;
         if (addWalletButton) addWalletButton.style.display = 'inline-flex';
-        if (createWorkspaceButton) createWorkspaceButton.style.display = 'none';
       } else {
         workspaceBar?.classList.add('is-chooser');
         workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
@@ -1081,9 +1079,10 @@ const app = (function () {
           return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
             <i data-lucide="wallet" class="icon-sm"></i><span>${escapeHtml(workspace.name)}</span><strong>$${balance.toFixed(2)}</strong><small>${Number(workspace.wallet_count || 0)} wallets · Enter</small>
           </button>`;
-        }).join('');
+        }).join('') + `<button type="button" class="workspace-choice workspace-create-choice" onclick="app.openCreateWorkspaceModal()">
+          <i data-lucide="folder-plus" class="icon-sm"></i><span>New Workspace</span><strong>+</strong><small>Create a separate wallet space</small>
+        </button>`;
         if (addWalletButton) addWalletButton.style.display = 'none';
-        if (createWorkspaceButton) createWorkspaceButton.style.display = 'inline-flex';
       }
       renderIcons();
     }
@@ -2004,8 +2003,7 @@ const app = (function () {
     if (summaryCount) summaryCount.textContent = visibleWallets.length;
 
     if (!state.activeWorkspaceId) {
-      container.innerHTML = `<div class="card workspace-empty-state"><i data-lucide="folder-open" class="icon-lg"></i><h3>Choose a Workspace</h3><p class="description">Personal Workspace contains your existing wallets. New workspaces start empty until you add a wallet.</p></div>`;
-      renderIcons();
+      container.innerHTML = '';
       return;
     }
 

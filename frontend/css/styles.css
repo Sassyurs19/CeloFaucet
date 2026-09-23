@@ -820,8 +820,6 @@ i[data-lucide], svg.lucide {
   overflow: visible;
 }
 
-.wallet-workspace-bar.is-chooser > .btn { align-self: flex-start; }
-
 .workspace-choice {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -840,6 +838,8 @@ i[data-lucide], svg.lucide {
 .workspace-choice > i { color: var(--celo-green-dark); }
 .workspace-choice strong { color: var(--celo-green-dark); font-size: 14px; }
 .workspace-choice small { grid-column: 2 / -1; color: var(--text-muted); font-size: 11px; }
+.workspace-create-choice { border-style: dashed; color: var(--celo-green-dark); background: rgba(53, 208, 127, 0.025); }
+.workspace-create-choice strong { font-size: 18px; }
 
 .workspace-back {
   display: inline-flex;
@@ -869,15 +869,6 @@ i[data-lucide], svg.lucide {
 }
 
 .workspace-current small { color: var(--text-muted); font-size: 10px; font-weight: 600; }
-
-.workspace-empty-state {
-  grid-column: 1 / -1;
-  padding: 32px 20px;
-  text-align: center;
-}
-
-.workspace-empty-state > i { color: var(--text-muted); }
-.workspace-empty-state h3 { margin: 10px 0 4px; font-size: 17px; }
 
 .workspace-tab {
   display: inline-grid;
