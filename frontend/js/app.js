@@ -2040,7 +2040,6 @@ const app = (function () {
       const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
       const celoNum = parseFloat(w.celo_balance || 0);
       const celo = celoNum.toFixed(4);
-      const needsCeloFee = celoNum <= 0;
       const isSelected = state.selectedWalletId === w.id;
       const isExpanded = String(state.expandedWalletId) === String(w.id);
 
@@ -2065,11 +2064,8 @@ const app = (function () {
               <div class="wallet-detail-actions">
                 <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
-                <div class="dropdown" id="dropdown-wallet-${w.id}"><button type="button" class="dropdown-toggle" onclick="app.toggleWalletDropdown(${w.id}, event)" title="More wallet actions"><i data-lucide="more-horizontal" class="icon-sm"></i></button><div class="dropdown-menu">
-                  <button type="button" class="dropdown-item" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')"><i data-lucide="pencil" class="icon-sm"></i><span>Rename</span></button>
-                  ${needsCeloFee ? `<button type="button" class="dropdown-item" onclick="app.fillCeloFee(${w.id}, event)"><i data-lucide="fuel" class="icon-sm"></i><span>Fill CELO Fee</span></button>` : ''}
-                  <button type="button" class="dropdown-item danger" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-sm"></i><span>Remove Wallet</span></button>
-                </div></div>
+                <button class="btn btn-secondary btn-sm" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')"><i data-lucide="pencil" class="icon-xs"></i> Rename</button>
+                <button class="btn btn-danger btn-sm" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-xs"></i> Remove</button>
               </div>
             </div>` : ''}
         </div>
@@ -2407,9 +2403,10 @@ const app = (function () {
 
   async function handleDeleteWallet(walletId) {
     const toDelete = state.wallets.find((w) => w.id === walletId);
+    const walletName = toDelete?.wallet_name || toDelete?.name || toDelete?.label || 'Wallet';
+    if (!window.confirm(`Remove ${walletName}? This cannot be undone.`)) return;
     try {
       await apiRequest(`/api/wallets/${walletId}`, { method: 'DELETE' });
-      const walletName = toDelete?.wallet_name || toDelete?.name || toDelete?.label || 'Wallet';
       showToast(`${walletName} deleted.`, 'success');
       await loadWallets();
     } catch (err) {
