@@ -794,6 +794,34 @@ class Database:
             await conn.commit()
             return dict(workspace) if workspace else {"name": clean_name}
 
+    async def rename_user_workspace(self, workspace_id: int, user_identifier: int, name: str) -> dict[str, Any]:
+        """Rename only a workspace owned by the current user; wallets stay assigned."""
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Workspace name is required")
+        async with self.connect() as conn:
+            try:
+                cursor = await conn.execute(
+                    """
+                    UPDATE wallet_workspaces SET name = ?
+                    WHERE id = ? AND (user_id = ? OR telegram_id = ?);
+                    """,
+                    (clean_name, workspace_id, user_identifier, user_identifier),
+                )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("A workspace with this name already exists") from None
+                raise
+            if getattr(cursor, "rowcount", 1) == 0:
+                raise ValueError("Workspace not found")
+            async with conn.execute(
+                "SELECT id, name, created_at FROM wallet_workspaces WHERE id = ?;",
+                (workspace_id,),
+            ) as cur:
+                workspace = await cur.fetchone()
+            await conn.commit()
+            return dict(workspace) if workspace else {"id": workspace_id, "name": clean_name}
+
     async def get_user_workspace_by_id(self, workspace_id: int, user_identifier: int) -> Optional[dict[str, Any]]:
         async with self.connect() as conn:
             async with conn.execute(

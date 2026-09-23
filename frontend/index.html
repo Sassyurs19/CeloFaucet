@@ -413,28 +413,18 @@
               </p>
             </div>
             <div class="wallets-header-actions">
-              <div class="workspace-picker">
-                <label for="wallet-workspace-select" class="sr-only">Workspace</label>
-                <select id="wallet-workspace-select" class="form-input" onchange="app.selectWalletWorkspace(this.value)" title="Choose workspace"></select>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openCreateWorkspaceModal()" title="New workspace">
-                  <i data-lucide="folder-plus" class="icon-sm"></i><span>Workspace</span>
-                </button>
-              </div>
-              <div class="wallet-layout-picker" role="group" aria-label="Wallet grid layout">
-                <span class="wallet-layout-label">Layout</span>
-                <button type="button" class="wallet-layout-option" data-wallet-columns="1" onclick="app.setWalletGridColumns(1)" title="One column">1</button>
-                <button type="button" class="wallet-layout-option" data-wallet-columns="2" onclick="app.setWalletGridColumns(2)" title="Two columns">2</button>
-                <button type="button" class="wallet-layout-option" data-wallet-columns="3" onclick="app.setWalletGridColumns(3)" title="Three columns">3</button>
-              </div>
-              <button class="btn btn-secondary btn-sm" id="btn-wallets-refresh" onclick="app.loadWallets()" title="Refresh balances">
-                <i data-lucide="refresh-cw" class="icon-sm"></i>
-                <span>Refresh</span>
-              </button>
               <button class="btn btn-primary btn-sm" onclick="app.openAddWalletModal()">
                 <i data-lucide="plus" class="icon-sm"></i>
                 <span>+ Add Wallet</span>
               </button>
             </div>
+          </div>
+
+          <div class="wallet-workspace-bar" aria-label="Wallet workspaces">
+            <div id="wallet-workspace-list" class="wallet-workspace-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.openCreateWorkspaceModal()">
+              <i data-lucide="folder-plus" class="icon-sm"></i><span>New Workspace</span>
+            </button>
           </div>
 
           <!-- Responsive Wallets Cards Grid -->
@@ -912,6 +902,23 @@
           <input id="workspace-name" class="form-input" maxlength="40" required placeholder="e.g. Personal">
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Create Workspace</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-rename-workspace" class="modal-overlay">
+    <div class="modal-card" style="max-width:420px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Rename Workspace</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-rename-workspace')">&times;</button>
+      </div>
+      <form onsubmit="app.submitRenameWorkspace(event)">
+        <input type="hidden" id="rename-workspace-id">
+        <div class="form-group">
+          <label class="form-label" for="rename-workspace-name">Workspace Name</label>
+          <input id="rename-workspace-name" class="form-input" maxlength="40" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Save Name</button>
       </form>
     </div>
   </div>

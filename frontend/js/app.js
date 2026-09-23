@@ -995,9 +995,6 @@ const app = (function () {
   }
 
   async function loadWallets() {
-    const refreshBtn = document.getElementById('btn-wallets-refresh');
-    if (refreshBtn) refreshBtn.classList.add('is-spinning');
-
     try {
       await loadWorkspaces();
       const data = await apiRequest('/api/wallets');
@@ -1036,8 +1033,6 @@ const app = (function () {
       });
     } catch (err) {
       showToast('Failed to load wallets: ' + err.message, 'error');
-    } finally {
-      if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
   }
 
@@ -1052,18 +1047,28 @@ const app = (function () {
   }
 
   function renderWorkspaceSelect() {
-    const select = document.getElementById('wallet-workspace-select');
     const importSelect = document.getElementById('import-wallet-workspace');
+    const workspaceList = document.getElementById('wallet-workspace-list');
     const options = (state.workspaces || []).map((workspace) =>
       `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}${workspace.wallet_count !== undefined ? ` (${workspace.wallet_count})` : ''}</option>`
     ).join('');
-    [select, importSelect].forEach((element) => {
+    [importSelect].forEach((element) => {
       if (!element) return;
       const previous = element.value;
       element.innerHTML = options || '<option value="">Personal Workspace</option>';
       element.value = String(state.activeWorkspaceId || previous || '');
       if (!element.value && element.options.length) element.selectedIndex = 0;
     });
+    if (workspaceList) {
+      workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
+        const active = String(workspace.id) === String(state.activeWorkspaceId);
+        return `<button type="button" class="workspace-tab ${active ? 'active' : ''}" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
+          <span>${escapeHtml(workspace.name)}</span><small>${Number(workspace.wallet_count || 0)} wallets</small>
+          ${active ? `<i data-lucide="pencil" class="icon-xs workspace-tab-edit" onclick="event.stopPropagation(); app.openRenameWorkspaceModal(${workspace.id})" title="Rename workspace"></i>` : ''}
+        </button>`;
+      }).join('');
+      renderIcons();
+    }
   }
 
   function selectWalletWorkspace(workspaceId) {
@@ -1096,6 +1101,36 @@ const app = (function () {
       renderWalletsList();
       closeModal('modal-create-workspace');
       showToast(`${name} workspace created.`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  function openRenameWorkspaceModal(workspaceId) {
+    const workspace = (state.workspaces || []).find((item) => String(item.id) === String(workspaceId));
+    if (!workspace) return;
+    const idInput = document.getElementById('rename-workspace-id');
+    const nameInput = document.getElementById('rename-workspace-name');
+    if (idInput) idInput.value = workspace.id;
+    if (nameInput) nameInput.value = workspace.name;
+    openModal('modal-rename-workspace');
+    setTimeout(() => nameInput?.focus(), 0);
+  }
+
+  async function submitRenameWorkspace(event) {
+    event.preventDefault();
+    const workspaceId = document.getElementById('rename-workspace-id')?.value;
+    const name = document.getElementById('rename-workspace-name')?.value.trim();
+    if (!workspaceId || !name) return;
+    try {
+      await apiRequest(`/api/workspaces/${workspaceId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      });
+      await loadWorkspaces();
+      renderWalletsList();
+      closeModal('modal-rename-workspace');
+      showToast('Workspace renamed.', 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -1978,7 +2013,7 @@ const app = (function () {
                 <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy address"><i data-lucide="copy" class="icon-xs"></i></button>
                 <span class="badge ${badgeClass}">${typeLabel}</span>
               </div>
-              <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}</strong></span><button type="button" class="btn btn-secondary btn-sm" onclick="app.refreshSingleWallet(${w.id})"><i data-lucide="refresh-cw" class="icon-xs"></i> Refresh</button></div>
+              <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}</strong></span></div>
               <div class="wallet-detail-actions">
                 <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
@@ -2018,12 +2053,8 @@ const app = (function () {
 
   function applyWalletGridColumns() {
     const container = document.getElementById('wallets-list-container');
-    const columns = [1, 2, 3].includes(Number(state.walletGridColumns)) ? Number(state.walletGridColumns) : 2;
-    state.walletGridColumns = columns;
-    if (container) container.setAttribute('data-columns', String(columns));
-    document.querySelectorAll('.wallet-layout-option').forEach((button) => {
-      button.classList.toggle('active', Number(button.dataset.walletColumns) === columns);
-    });
+    state.walletGridColumns = 1;
+    if (container) container.setAttribute('data-columns', '1');
   }
 
   function setWalletGridColumns(columns) {
@@ -3102,6 +3133,8 @@ const app = (function () {
     openAddWalletModal,
     openCreateWorkspaceModal,
     submitCreateWorkspace,
+    openRenameWorkspaceModal,
+    submitRenameWorkspace,
     selectWalletWorkspace,
     handleConnectInBrowserWallet,
     submitImportWallet,

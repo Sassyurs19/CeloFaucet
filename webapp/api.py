@@ -502,6 +502,31 @@ async def api_create_workspace(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "workspace": workspace}, status=201)
 
 
+async def api_rename_workspace(request: web.Request) -> web.Response:
+    """Rename a current user's workspace without moving any wallets."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        workspace_id = int(request.match_info["id"])
+        data = await request.json()
+    except (ValueError, KeyError):
+        return web.json_response({"error": "Invalid workspace."}, status=400)
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    name = str(data.get("name", "")).strip()
+    if not name or len(name) > 40:
+        return web.json_response({"error": "Workspace name must be between 1 and 40 characters."}, status=400)
+    try:
+        workspace = await db.rename_user_workspace(workspace_id, user_id, name)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("Unable to rename wallet workspace for user ID %s.", user_id)
+        return web.json_response({"error": "Workspace could not be renamed. Please try again later."}, status=503)
+    return web.json_response({"success": True, "workspace": workspace})
+
+
 async def _workspace_for_request(data: dict, user_id: int) -> tuple[int | None, web.Response | None]:
     """Resolve a supplied workspace ID while enforcing ownership server-side."""
     raw_workspace_id = data.get("workspace_id")
@@ -1944,6 +1969,7 @@ def register_api_routes(app: web.Application) -> None:
     # Wallets
     app.router.add_get("/api/workspaces", api_get_workspaces)
     app.router.add_post("/api/workspaces", api_create_workspace)
+    app.router.add_patch("/api/workspaces/{id}", api_rename_workspace)
     app.router.add_get("/api/wallets", api_get_wallets)
     app.router.add_post("/api/wallets/connect", api_connect_wallet)
     app.router.add_post("/api/wallets/import", api_import_wallet)

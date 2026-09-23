@@ -777,7 +777,7 @@ i[data-lucide], svg.lucide {
 /* --- Minimized Sleek Wallet Cards --- */
 .wallets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -793,20 +793,54 @@ i[data-lucide], svg.lucide {
   justify-content: flex-end;
 }
 
-.workspace-picker {
-  display: inline-flex;
+.wallet-workspace-bar {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  margin: 0 0 14px;
 }
 
-.workspace-picker select {
-  width: auto;
-  max-width: 185px;
-  min-height: 34px;
-  padding: 5px 28px 5px 9px;
-  font-size: 12px;
-  font-weight: 700;
+.wallet-workspace-list {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px;
 }
+
+.workspace-tab {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 6px;
+  min-width: max-content;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.workspace-tab small {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.workspace-tab.active {
+  border-color: var(--celo-green);
+  background: rgba(53, 208, 127, 0.08);
+  color: var(--celo-green-dark);
+}
+
+.workspace-tab-edit { color: var(--text-muted); }
+.workspace-tab.active:hover .workspace-tab-edit { color: var(--celo-green-dark); }
 
 .wallet-layout-picker {
   display: inline-flex;
@@ -1001,8 +1035,8 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-card-title { max-width: 100px; }
   .wallets-grid[data-columns="3"] .wallet-address-row,
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
-  .workspace-picker { width: 100%; }
-  .workspace-picker select { flex: 1; max-width: none; }
+  .wallet-workspace-bar { align-items: stretch; flex-direction: column; }
+  .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
   .wallet-detail-actions { flex-wrap: wrap; }
 }
 
