@@ -535,7 +535,11 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
         return web.json_response({"error": err_msg or "Invalid Celo address format."}, status=400)
 
     # If wallet address is already in user's account, select/update it gracefully instead of 409 error
-    existing = await db.get_user_wallets(user_id)
+    try:
+        existing = await db.get_user_wallets(user_id)
+    except Exception:
+        logger.exception("Unable to access wallet storage for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
     existing_wallet = next((w for w in existing if w["address"].lower() == chk_addr.lower()), None)
     if existing_wallet:
         # If user passed a custom name (not default placeholder), update the wallet name
@@ -645,45 +649,52 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     account = None
 
     # If address already exists in user's account, update/link the private key!
-    existing = await db.get_user_wallets(user_id)
+    try:
+        existing = await db.get_user_wallets(user_id)
+    except Exception:
+        logger.exception("Unable to access wallet storage for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
     existing_wallet = next((w for w in existing if w["address"].lower() == derived_address.lower()), None)
     if existing_wallet:
         final_name = name if (name and name.strip() and name.strip().lower() != "imported wallet") else existing_wallet["wallet_name"]
-        await db.update_wallet_private_key(
-            wallet_id=existing_wallet["id"],
-            encrypted_private_key=encrypted_key,
-            wallet_name=final_name,
-        )
-        celo_bal = await celo_client.get_celo_balance(derived_address)
-        _, usat_bal = await celo_client.get_usat_balance(derived_address)
+        try:
+            await db.update_wallet_private_key(
+                wallet_id=existing_wallet["id"],
+                encrypted_private_key=encrypted_key,
+                wallet_name=final_name,
+            )
+        except Exception:
+            logger.exception("Unable to save imported wallet for user ID %s.", user_id)
+            return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
         return web.json_response({
             "success": True,
-            "message": f"Private key linked successfully! '{final_name}' is now active for 1-click payments.",
+            "message": f"Private key linked successfully! '{final_name}' is now ready for payments.",
             "wallet": {
                 "id": existing_wallet["id"],
                 "name": final_name,
                 "address": derived_address,
                 "wallet_type": "imported",
-                "celo_balance": f"{celo_bal:.4f}",
-                "usat_balance": f"{usat_bal:.2f}",
+                "balances_available": False,
             },
         })
 
-    w_id = await db.add_user_wallet(
-        telegram_id=user_id,
-        wallet_name=name,
-        address=derived_address,
-        wallet_type="imported",
-        encrypted_private_key=encrypted_key,
-        user_id=user_id,
-    )
+    try:
+        w_id = await db.add_user_wallet(
+            telegram_id=user_id,
+            wallet_name=name,
+            address=derived_address,
+            wallet_type="imported",
+            encrypted_private_key=encrypted_key,
+            user_id=user_id,
+        )
+    except Exception:
+        logger.exception("Unable to save imported wallet for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
     wallet_name = name
-
-    celo_bal = await celo_client.get_celo_balance(derived_address)
-    _, usat_bal = await celo_client.get_usat_balance(derived_address)
 
     return web.json_response({
         "success": True,
+        "message": f"Wallet '{wallet_name}' imported successfully.",
         "wallet": {
             "id": w_id,
             "name": wallet_name,
@@ -691,8 +702,7 @@ async def api_import_wallet(request: web.Request) -> web.Response:
             "address": derived_address,
             "type": "imported",
             "wallet_type": "imported",
-            "celo_balance": f"{celo_bal:.4f}",
-            "usat_balance": f"{float(usat_bal):.2f}",
+            "balances_available": False,
         }
     })
 
