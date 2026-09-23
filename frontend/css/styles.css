@@ -1618,6 +1618,59 @@ i[data-lucide], svg.lucide {
   box-shadow: 0 14px 28px -6px rgba(37, 99, 235, 0.45);
 }
 
+/* Homepage payment surface: one quiet cobalt system, with green reserved for
+   confirmed states elsewhere in the app. This prevents mixed accent colors
+   from competing with the payment flow. */
+#view-dashboard .pay-card-premium {
+  background: #ffffff;
+  border-color: rgba(37, 99, 235, 0.18);
+  box-shadow: 0 18px 42px -22px rgba(30, 58, 138, 0.22), 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+#view-dashboard .pay-card-premium::before {
+  background: linear-gradient(90deg, transparent, var(--balance-available), transparent);
+}
+
+#view-dashboard .pay-capsule {
+  background: #fbfdff;
+  border-color: #dbe7f8;
+}
+
+#view-dashboard .pay-capsule:focus-within,
+#view-dashboard .pay-amount-box:focus-within {
+  border-color: var(--balance-available);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+#view-dashboard .pay-connector-badge {
+  color: var(--balance-available);
+  border-color: #c7d9f5;
+}
+
+#view-dashboard .pay-connector-badge:hover { border-color: var(--balance-available); }
+
+#view-dashboard .pay-currency-badge,
+#view-dashboard .btn-preset-chip.max-chip {
+  background: var(--balance-available-subtle);
+  border-color: rgba(37, 99, 235, 0.22);
+  color: var(--balance-available-dark);
+}
+
+#view-dashboard .btn-preset-chip:hover {
+  background: #e4efff;
+  border-color: var(--balance-available);
+  color: var(--balance-available-dark);
+}
+
+#view-dashboard .wallet-trigger-gas,
+#view-dashboard .wallet-option-balance { color: var(--balance-available-dark) !important; }
+
+#view-dashboard .badge-green {
+  background: var(--balance-available-subtle);
+  color: var(--balance-available-dark);
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
 .btn-pay-hero:active {
   transform: translateY(0);
 }
