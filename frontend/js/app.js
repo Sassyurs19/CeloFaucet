@@ -19,6 +19,7 @@ const app = (function () {
     wallets: [],
     workspaces: [],
     activeWorkspaceId: null,
+    dashboardWorkspaceId: null,
     expandedWalletId: null,
     selectedWalletId: null,
     receivingWallets: [],
@@ -1215,14 +1216,34 @@ const app = (function () {
     closeCustomWalletDropdown();
   }
 
+  function selectDashboardWorkspace(workspaceId) {
+    state.dashboardWorkspaceId = workspaceId || null;
+    state.selectedWalletId = null;
+    renderWalletsSelect();
+  }
+
   function renderWalletsSelect() {
     const select = document.getElementById('select-send-wallet');
     const addWalletBtn = document.getElementById('btn-dash-add-wallet');
     const customDropdown = document.getElementById('custom-wallet-dropdown');
+    const dashboardWorkspaceSelect = document.getElementById('select-dashboard-workspace');
+    const customContainer = document.getElementById('custom-wallet-select-container');
+    const workspaceWallets = state.dashboardWorkspaceId
+      ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.dashboardWorkspaceId))
+      : [];
+
+    if (dashboardWorkspaceSelect) {
+      const previous = dashboardWorkspaceSelect.value;
+      dashboardWorkspaceSelect.innerHTML = '<option value="">Choose a workspace first</option>' + (state.workspaces || []).map((workspace) =>
+        `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)} (${Number(workspace.wallet_count || 0)} wallets)</option>`
+      ).join('');
+      dashboardWorkspaceSelect.value = state.dashboardWorkspaceId || previous || '';
+    }
+    if (customContainer) customContainer.style.display = state.dashboardWorkspaceId ? 'block' : 'none';
 
     // Hide "+ Add Wallet" button on dashboard if user already has wallets
     if (addWalletBtn) {
-      addWalletBtn.style.display = state.wallets.length === 0 ? 'inline-flex' : 'none';
+      addWalletBtn.style.display = state.dashboardWorkspaceId && workspaceWallets.length === 0 ? 'inline-flex' : 'none';
     }
 
     // Sort wallets alphabetically by name
@@ -1234,10 +1255,10 @@ const app = (function () {
 
     if (select) {
       select.innerHTML = '';
-      if (state.wallets.length === 0) {
-        select.innerHTML = '<option value="">-- No wallet added yet. Click + Add Wallet --</option>';
+      if (workspaceWallets.length === 0) {
+        select.innerHTML = '<option value="">-- No wallet in this workspace --</option>';
       } else {
-        state.wallets.forEach((w) => {
+        workspaceWallets.forEach((w) => {
           const opt = document.createElement('option');
           opt.value = String(w.id);
           const name = w.name || w.label || 'My Wallet';
@@ -1249,18 +1270,17 @@ const app = (function () {
       }
     }
 
-    if (state.selectedWalletId && state.wallets.some((w) => String(w.id) === String(state.selectedWalletId))) {
+    if (state.selectedWalletId && workspaceWallets.some((w) => String(w.id) === String(state.selectedWalletId))) {
       if (select) select.value = String(state.selectedWalletId);
-    } else if (state.wallets.length > 0) {
-      state.selectedWalletId = state.wallets[0].id;
-      if (select) select.value = String(state.wallets[0].id);
     } else {
       state.selectedWalletId = null;
     }
 
     // Populate custom website-themed dropdown menu
     if (customDropdown) {
-      if (state.wallets.length === 0) {
+      if (!state.dashboardWorkspaceId) {
+        customDropdown.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:12px;">Choose a workspace first.</div>';
+      } else if (workspaceWallets.length === 0) {
         customDropdown.innerHTML = `
           <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:12px;">
             No wallets found. Click "+ Add Wallet" to connect or import one.
@@ -1268,7 +1288,7 @@ const app = (function () {
         `;
       } else {
         let optionsHtml = '';
-        state.wallets.forEach((w) => {
+        workspaceWallets.forEach((w) => {
           const isSelected = String(state.selectedWalletId) === String(w.id);
           const wType = (w.wallet_type || w.type || 'connected').toLowerCase();
           const name = w.name || w.label || 'My Wallet';
@@ -2262,6 +2282,8 @@ const app = (function () {
 
     const pkInput = document.getElementById('import-private-key');
     const labelInput = document.getElementById('import-wallet-label');
+    // When adding from the homepage, keep the chosen payment workspace selected.
+    if (state.dashboardWorkspaceId) state.activeWorkspaceId = state.dashboardWorkspaceId;
     renderWorkspaceSelect();
     if (pkInput) pkInput.value = '';
     if (labelInput) labelInput.value = getNextWalletName();
@@ -3164,6 +3186,7 @@ const app = (function () {
     toggleWalletDropdownCustom,
     closeCustomWalletDropdown,
     selectCustomWallet,
+    selectDashboardWorkspace,
     setMaxAmount,
     handleAmountChanged,
     handleRecipientChanged,

@@ -261,8 +261,15 @@
                 </div>
               </div>
 
+              <div class="dashboard-workspace-select" id="dashboard-workspace-select-container">
+                <label class="form-label" for="select-dashboard-workspace">1. Choose Workspace</label>
+                <select id="select-dashboard-workspace" class="form-input" onchange="app.selectDashboardWorkspace(this.value)">
+                  <option value="">Choose a workspace first</option>
+                </select>
+              </div>
+
               <!-- Custom Themed Wallet Selector -->
-              <div class="wallet-custom-select-container" id="custom-wallet-select-container">
+              <div class="wallet-custom-select-container" id="custom-wallet-select-container" style="display:none;">
                 <div class="wallet-custom-trigger" id="custom-wallet-trigger" onclick="app.toggleWalletDropdownCustom(event)">
                   <div class="wallet-trigger-content">
                     <div class="wallet-trigger-top">
