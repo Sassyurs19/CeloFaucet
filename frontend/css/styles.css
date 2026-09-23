@@ -815,9 +815,9 @@ i[data-lucide], svg.lucide {
 }
 
 .wallet-workspace-bar.is-chooser .wallet-workspace-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  overflow: visible;
+  display: flex;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .workspace-choice {
@@ -832,6 +832,8 @@ i[data-lucide], svg.lucide {
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+  flex: 1 0 190px;
+  min-height: 76px;
 }
 
 .workspace-choice:hover { border-color: var(--celo-green); background: rgba(53, 208, 127, 0.05); }
@@ -1098,7 +1100,7 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
   .wallet-workspace-bar { align-items: stretch; flex-direction: column; }
   .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
-  .wallet-workspace-bar.is-chooser .wallet-workspace-list { grid-template-columns: 1fr; }
+  .workspace-choice { flex-basis: 190px; }
   .wallet-detail-actions { flex-wrap: wrap; }
 }
 
