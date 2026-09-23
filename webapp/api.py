@@ -739,7 +739,10 @@ async def api_import_wallet(request: web.Request) -> web.Response:
     formatted_key = None
     account = None
 
-    # If address already exists in user's account, update/link the private key!
+    # Never silently replace an imported wallet. A private key derives one
+    # address, so importing that same address a second time must leave the
+    # original wallet unchanged. The one safe exception is upgrading a
+    # previously connected (keyless) wallet to an imported wallet.
     try:
         existing = await db.get_user_wallets(user_id)
     except Exception:
@@ -747,6 +750,10 @@ async def api_import_wallet(request: web.Request) -> web.Response:
         return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
     existing_wallet = next((w for w in existing if w["address"].lower() == derived_address.lower()), None)
     if existing_wallet:
+        if existing_wallet.get("wallet_type") == "imported" or existing_wallet.get("encrypted_private_key"):
+            return web.json_response({
+                "error": f"This wallet is already saved as '{existing_wallet['wallet_name']}'. It was not replaced."
+            }, status=409)
         final_name = name if (name and name.strip() and name.strip().lower() != "imported wallet") else existing_wallet["wallet_name"]
         try:
             await db.update_wallet_private_key(
