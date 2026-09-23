@@ -19,6 +19,10 @@
   --celo-green-subtle: #ecfdf5;
   --accent-blue: #0284c7;
   --accent-blue-subtle: #f0f9ff;
+  --balance-available: #2563eb;
+  --balance-available-dark: #1d4ed8;
+  --balance-available-subtle: #eff6ff;
+  --balance-zero: #94a3b8;
   --danger: #ef4444;
   --danger-subtle: #fef2f2;
   --warning: #f59e0b;
@@ -407,6 +411,10 @@ p.description {
   font-weight: 700;
   color: var(--text-primary);
 }
+
+/* Amounts use blue for available funds, while zero stays intentionally quiet. */
+.balance-positive { color: var(--balance-available) !important; }
+.balance-zero { color: var(--balance-zero) !important; }
 
 /* Buttons */
 .btn {
@@ -985,7 +993,7 @@ i[data-lucide], svg.lucide {
 }
 
 .wallet-summary-balance {
-  color: var(--text-primary);
+  color: var(--balance-available);
   font-size: 16px;
   font-weight: 800;
   white-space: nowrap;
@@ -999,6 +1007,8 @@ i[data-lucide], svg.lucide {
   font-weight: 700;
   text-align: right;
 }
+
+.wallet-summary-balance.balance-zero { color: var(--balance-zero) !important; }
 
 .wallet-expand-icon { color: var(--text-muted); }
 
@@ -1519,7 +1529,7 @@ i[data-lucide], svg.lucide {
 .pay-amount-input {
   font-size: 30px;
   font-weight: 800;
-  color: var(--text-primary);
+  color: var(--balance-available-dark);
   border: none;
   outline: none;
   background: transparent;
@@ -1538,12 +1548,12 @@ i[data-lucide], svg.lucide {
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  background: rgba(53, 208, 127, 0.1);
-  border: 1px solid rgba(53, 208, 127, 0.25);
+  background: var(--balance-available-subtle);
+  border: 1px solid rgba(37, 99, 235, 0.2);
   border-radius: 12px;
   font-weight: 800;
   font-size: 14px;
-  color: var(--celo-green-dark);
+  color: var(--balance-available-dark);
   flex-shrink: 0;
   user-select: none;
 }
@@ -1592,20 +1602,20 @@ i[data-lucide], svg.lucide {
   border-radius: 18px;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, #35D07F 0%, #10B981 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  box-shadow: 0 10px 24px -6px rgba(53, 208, 127, 0.45);
+  box-shadow: 0 10px 24px -6px rgba(37, 99, 235, 0.35);
   transition: all 0.2s ease;
   letter-spacing: 0.2px;
 }
 
 .btn-pay-hero:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 28px -6px rgba(53, 208, 127, 0.55);
+  box-shadow: 0 14px 28px -6px rgba(37, 99, 235, 0.45);
 }
 
 .btn-pay-hero:active {
@@ -2021,8 +2031,8 @@ i[data-lucide], svg.lucide {
   flex-shrink: 0;
 }
 
-.payment-stat-icon-transfer { background: rgba(53, 208, 127, 0.12); color: var(--celo-green-dark); }
-.payment-stat-icon-complete { background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); }
+.payment-stat-icon-transfer { background: var(--balance-available-subtle); color: var(--balance-available); }
+.payment-stat-icon-complete { background: var(--celo-green-subtle); color: var(--celo-green-dark); }
 
 .payment-stat-copy { overflow: hidden; }
 

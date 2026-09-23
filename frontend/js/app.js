@@ -83,6 +83,13 @@ const app = (function () {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   }
 
+  function setBalanceTone(element, value) {
+    if (!element) return;
+    const isAvailable = Number(value) > 0;
+    element.classList.toggle('balance-positive', isAvailable);
+    element.classList.toggle('balance-zero', !isAvailable);
+  }
+
   async function copyAddress(addr) {
     if (!addr) return;
     try {
@@ -1077,7 +1084,7 @@ const app = (function () {
           const workspaceWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
           const balance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
           return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
-            <i data-lucide="wallet" class="icon-sm"></i><span>${escapeHtml(workspace.name)}</span><strong>$${balance.toFixed(2)}</strong><small>${Number(workspace.wallet_count || 0)} wallets · Enter</small>
+            <i data-lucide="wallet" class="icon-sm"></i><span>${escapeHtml(workspace.name)}</span><strong class="${balance > 0 ? 'balance-positive' : 'balance-zero'}">$${balance.toFixed(2)}</strong><small>${Number(workspace.wallet_count || 0)} wallets · Enter</small>
           </button>`;
         }).join('') + `<button type="button" class="workspace-choice workspace-create-choice" onclick="app.openCreateWorkspaceModal()">
           <i data-lucide="folder-plus" class="icon-sm"></i><span>New Workspace</span><strong>+</strong><small>Create a separate wallet space</small>
@@ -1171,6 +1178,8 @@ const app = (function () {
     if (dashCount) dashCount.textContent = state.wallets.length;
     if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
     if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
+    setBalanceTone(dashTotal, totalUsdt);
+    setBalanceTone(walSummaryUsdt, totalUsdt);
   }
 
   function toggleWalletDropdownCustom(event) {
@@ -1358,6 +1367,7 @@ const app = (function () {
       if (triggerSubtext) triggerSubtext.style.display = 'none';
       if (triggerGas) triggerGas.style.display = 'none';
       if (triggerCopyBtn) triggerCopyBtn.style.display = 'none';
+      setBalanceTone(availUsdtEl, 0);
       renderIcons();
       return;
     }
@@ -1373,6 +1383,7 @@ const app = (function () {
 
     if (availUsdtEl) availUsdtEl.textContent = usat.toFixed(2);
     if (availCeloEl) availCeloEl.textContent = celo.toFixed(4);
+    setBalanceTone(availUsdtEl, usat);
 
     // Update Custom Trigger Display: Top displays custom wallet name, below displays short address, copy button & gas fee
     if (triggerAddr) {
@@ -2001,6 +2012,7 @@ const app = (function () {
     const summaryCount = document.getElementById('wallets-summary-count');
     if (summaryAmount) summaryAmount.textContent = `$${workspaceBalance.toFixed(2)}`;
     if (summaryCount) summaryCount.textContent = visibleWallets.length;
+    setBalanceTone(summaryAmount, workspaceBalance);
 
     if (!state.activeWorkspaceId) {
       container.innerHTML = '';
@@ -2050,7 +2062,7 @@ const app = (function () {
               <span class="wallet-card-title" title="${walletName}">${walletName}</span>
               <span class="wallet-card-subtitle">${isSelected ? 'Selected for payment' : typeLabel}</span>
             </span>
-            <span class="wallet-summary-balance">$${usdt}<small>USDT</small></span>
+            <span class="wallet-summary-balance ${Number(usdt) > 0 ? 'balance-positive' : 'balance-zero'}">$${usdt}<small>USDT</small></span>
             <i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
           </button>
           ${isExpanded ? `
@@ -2441,6 +2453,8 @@ const app = (function () {
 
       if (volEl) volEl.textContent = `$${totalVolume.toFixed(2)} USDT`;
       if (compEl) compEl.textContent = completedCount.toString();
+      setBalanceTone(volEl, totalVolume);
+      setBalanceTone(compEl, completedCount);
 
       if (payments.length === 0) {
         tbody.innerHTML = `
