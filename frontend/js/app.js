@@ -1023,20 +1023,7 @@ const app = (function () {
           }
         })
       ).then(() => {
-        // Calculate dynamic live total USDT balance across all user wallets
-        const totalUsdt = state.wallets.reduce((sum, w) => sum + parseFloat(w.usat_balance || 0), 0);
-        const totalUsdtFormatted = `$${totalUsdt.toFixed(2)}`;
-
-        const dashTotal = document.getElementById('dash-total-usdt-balance');
-        const dashCount = document.getElementById('dash-wallets-count');
-        if (dashTotal) dashTotal.textContent = totalUsdtFormatted;
-        if (dashCount) dashCount.textContent = state.wallets.length;
-
-        const walSummaryUsdt = document.getElementById('wallets-summary-usdt');
-        const walSummaryCount = document.getElementById('wallets-summary-count');
-        if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
-        if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
-
+        updateWalletBalanceDisplays();
         renderWalletsSelect();
         renderWalletsList();
         renderIcons();
@@ -1048,6 +1035,19 @@ const app = (function () {
     } finally {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
+  }
+
+  function updateWalletBalanceDisplays() {
+    const totalUsdt = state.wallets.reduce((sum, wallet) => sum + parseFloat(wallet.usat_balance || 0), 0);
+    const totalUsdtFormatted = `$${totalUsdt.toFixed(2)}`;
+    const dashTotal = document.getElementById('dash-total-usdt-balance');
+    const dashCount = document.getElementById('dash-wallets-count');
+    const walSummaryUsdt = document.getElementById('wallets-summary-usdt');
+    const walSummaryCount = document.getElementById('wallets-summary-count');
+    if (dashTotal) dashTotal.textContent = totalUsdtFormatted;
+    if (dashCount) dashCount.textContent = state.wallets.length;
+    if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
+    if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
   }
 
   function toggleWalletDropdownCustom(event) {
@@ -1510,6 +1510,7 @@ const app = (function () {
     openPaymentModal();
     setPaymentStep(1, 'Verifying balances on Celo Mainnet...');
 
+    let paymentConfirmed = false;
     try {
       const res = await apiRequest('/api/payments/create', {
         method: 'POST',
@@ -1529,7 +1530,6 @@ const app = (function () {
 
       if (res.celo_funded || payment.celo_funded) {
         setPaymentStep(2, '0.05 CELO Gas Subsidy sent! Gas confirmed on Celo.');
-        await new Promise((r) => setTimeout(r, 1200));
       } else {
         setPaymentStep(2, 'CELO gas balance sufficient. Proceeding to transfer...');
       }
@@ -1546,11 +1546,11 @@ const app = (function () {
 
       if (isServerBroadcast) {
         setPaymentStep(3, `Broadcasting ${amount.toFixed(2)} USDT on Celo Mainnet...`);
-        await new Promise((r) => setTimeout(r, 1000));
 
         const confirmedTx = res.tx_hash || payment.tx_hash;
         if (confirmedTx) {
           finishPaymentSuccess(confirmedTx, wallet, recipient, amount);
+          paymentConfirmed = true;
         } else {
           throw new Error(payment.error_message || res.error || 'Payment execution failed.');
         }
@@ -1571,6 +1571,7 @@ const app = (function () {
           });
 
           finishPaymentSuccess(txHash, wallet, recipient, amount);
+          paymentConfirmed = true;
         } else {
           // No provider and no private key: prompt directly for the key
           closeModal('modal-payment-progress');
@@ -1591,7 +1592,7 @@ const app = (function () {
     } finally {
       state.isSubmitting = false;
       state.pendingPayment = null;
-      loadWallets();
+      if (!paymentConfirmed) loadWallets();
     }
   }
 
@@ -1691,6 +1692,8 @@ const app = (function () {
 
     // Populate transaction receipt card
     const sourceWallet = fromWallet || state.wallets.find((w) => w.id === state.selectedWalletId);
+    resetConfirmedPaymentForm();
+    applyConfirmedWalletBalance(sourceWallet, amount);
     if (fromNameEl && sourceWallet) {
       const wName = sourceWallet.name || sourceWallet.label || 'My Wallet';
       fromNameEl.textContent = `${wName} (${formatShortAddress(sourceWallet.address)})`;
@@ -1749,6 +1752,34 @@ const app = (function () {
 
     renderIcons();
     showToast('Payment confirmed on Celo Mainnet!', 'success');
+    // The visible balance changes now; the server refresh then reconciles it.
+    void loadWallets();
+  }
+
+  function resetConfirmedPaymentForm() {
+    const amountInput = document.getElementById('input-transfer-amount');
+    const recipientInput = document.getElementById('input-recipient-address');
+    const savedRecipientSelect = document.getElementById('select-saved-recipient');
+    if (amountInput) amountInput.value = '';
+    if (recipientInput) recipientInput.value = '';
+    if (savedRecipientSelect) savedRecipientSelect.value = '';
+    handleAmountChanged();
+    handleRecipientChanged();
+  }
+
+  function applyConfirmedWalletBalance(wallet, amount) {
+    if (!wallet || !Number.isFinite(Number(amount))) return;
+    const currentWallet = state.wallets.find((item) => String(item.id) === String(wallet.id));
+    if (!currentWallet) return;
+    const currentBalance = Number.parseFloat(currentWallet.usat_balance);
+    const paidAmount = Number(amount);
+    if (!Number.isFinite(currentBalance) || currentBalance < paidAmount) return;
+    currentWallet.usat_balance = Math.max(0, currentBalance - paidAmount).toFixed(2);
+    updateWalletBalanceDisplays();
+    renderWalletsSelect();
+    renderWalletsList();
+    handleWalletSelected(currentWallet.id);
+    renderIcons();
   }
 
   function setPaymentFailed(errorMsg) {
