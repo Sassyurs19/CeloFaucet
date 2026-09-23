@@ -17,6 +17,9 @@ const app = (function () {
     currentAdminTab: 'overview',
     adminPaymentStatusFilter: '',
     wallets: [],
+    workspaces: [],
+    activeWorkspaceId: null,
+    expandedWalletId: null,
     selectedWalletId: null,
     receivingWallets: [],
     savedRecipients: [],
@@ -996,6 +999,7 @@ const app = (function () {
     if (refreshBtn) refreshBtn.classList.add('is-spinning');
 
     try {
+      await loadWorkspaces();
       const data = await apiRequest('/api/wallets');
       let wallets = data.wallets || [];
 
@@ -1034,6 +1038,66 @@ const app = (function () {
       showToast('Failed to load wallets: ' + err.message, 'error');
     } finally {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+    }
+  }
+
+  async function loadWorkspaces() {
+    const data = await apiRequest('/api/workspaces');
+    state.workspaces = data.workspaces || [];
+    const activeStillExists = state.workspaces.some((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
+    if (!activeStillExists) {
+      state.activeWorkspaceId = state.workspaces[0] ? String(state.workspaces[0].id) : null;
+    }
+    renderWorkspaceSelect();
+  }
+
+  function renderWorkspaceSelect() {
+    const select = document.getElementById('wallet-workspace-select');
+    const importSelect = document.getElementById('import-wallet-workspace');
+    const options = (state.workspaces || []).map((workspace) =>
+      `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}${workspace.wallet_count !== undefined ? ` (${workspace.wallet_count})` : ''}</option>`
+    ).join('');
+    [select, importSelect].forEach((element) => {
+      if (!element) return;
+      const previous = element.value;
+      element.innerHTML = options || '<option value="">Personal Workspace</option>';
+      element.value = String(state.activeWorkspaceId || previous || '');
+      if (!element.value && element.options.length) element.selectedIndex = 0;
+    });
+  }
+
+  function selectWalletWorkspace(workspaceId) {
+    state.activeWorkspaceId = workspaceId || null;
+    state.expandedWalletId = null;
+    renderWorkspaceSelect();
+    renderWalletsList();
+  }
+
+  function openCreateWorkspaceModal() {
+    const input = document.getElementById('workspace-name');
+    if (input) input.value = '';
+    openModal('modal-create-workspace');
+    setTimeout(() => input?.focus(), 0);
+  }
+
+  async function submitCreateWorkspace(event) {
+    event.preventDefault();
+    const input = document.getElementById('workspace-name');
+    const name = input?.value.trim();
+    if (!name) return;
+    try {
+      const result = await apiRequest('/api/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      await loadWorkspaces();
+      state.activeWorkspaceId = String(result.workspace?.id || state.activeWorkspaceId);
+      renderWorkspaceSelect();
+      renderWalletsList();
+      closeModal('modal-create-workspace');
+      showToast(`${name} workspace created.`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   }
 
@@ -1742,10 +1806,10 @@ const app = (function () {
     }
     if (actionBtn) {
       actionBtn.style.display = 'block';
-      actionBtn.textContent = 'Done & View Activity';
+      actionBtn.textContent = 'Back to Dashboard';
       actionBtn.onclick = () => {
         closeModal('modal-payment-progress');
-        navigateTo('payments');
+        navigateTo('dashboard');
       };
     }
     if (closeBtn) closeBtn.style.display = 'block';
@@ -1850,14 +1914,24 @@ const app = (function () {
 
     applyWalletGridColumns();
 
-    if (state.wallets.length === 0) {
+    const activeWorkspace = (state.workspaces || []).find((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
+    const visibleWallets = state.activeWorkspaceId
+      ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.activeWorkspaceId))
+      : state.wallets;
+    const workspaceBalance = visibleWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+    const summaryAmount = document.getElementById('wallets-summary-usdt');
+    const summaryCount = document.getElementById('wallets-summary-count');
+    if (summaryAmount) summaryAmount.textContent = `$${workspaceBalance.toFixed(2)}`;
+    if (summaryCount) summaryCount.textContent = visibleWallets.length;
+
+    if (visibleWallets.length === 0) {
       container.innerHTML = `
         <div class="card" style="text-align:center; padding:36px 20px; grid-column: 1 / -1;">
           <div style="margin-bottom:12px;">
             <i data-lucide="wallet" class="icon-lg" style="color:var(--text-muted);"></i>
           </div>
-          <h3 style="font-size:18px;">No Wallets Added Yet</h3>
-          <p class="description" style="margin-top:4px;">Import a Celo private key to start making payments.</p>
+          <h3 style="font-size:18px;">No Wallets in ${escapeHtml(activeWorkspace?.name || 'this workspace')}</h3>
+          <p class="description" style="margin-top:4px;">Add a wallet to keep this workspace ready for payments.</p>
           <button class="btn btn-primary" onclick="app.openAddWalletModal()">
             <i data-lucide="key-round" class="icon-sm"></i>
             <span>Import Your First Wallet</span>
@@ -1869,7 +1943,7 @@ const app = (function () {
     }
 
     let html = '';
-    const sortedWallets = [...state.wallets].sort((a, b) => {
+    const sortedWallets = [...visibleWallets].sort((a, b) => {
       const nameA = (a.name || a.label || '').trim().toLowerCase();
       const nameB = (b.name || b.label || '').trim().toLowerCase();
       return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
@@ -1885,87 +1959,48 @@ const app = (function () {
       const celo = celoNum.toFixed(4);
       const needsCeloFee = celoNum <= 0;
       const isSelected = state.selectedWalletId === w.id;
+      const isExpanded = String(state.expandedWalletId) === String(w.id);
 
       html += `
-        <div class="wallet-card ${isSelected ? 'active-wallet' : ''}" onclick="app.openWalletHistory(${w.id}, event)" title="View this wallet's transaction history">
-          <div class="wallet-card-header">
-            <div style="min-width:0; flex:1;">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <span class="wallet-card-title" title="${walletName}">${walletName}</span>
-                ${isSelected ? '<span class="badge badge-green" style="font-size:9px; padding:1px 5px; flex-shrink:0;">Active</span>' : ''}
-              </div>
+        <div class="wallet-card ${isSelected ? 'active-wallet' : ''} ${isExpanded ? 'wallet-card-expanded' : ''}">
+          <button type="button" class="wallet-card-summary" onclick="app.toggleWalletDetails(${w.id})" aria-expanded="${isExpanded}" title="Show wallet details">
+            <span style="min-width:0;">
+              <span class="wallet-card-title" title="${walletName}">${walletName}</span>
+              <span class="wallet-card-subtitle">${isSelected ? 'Selected for payment' : typeLabel}</span>
+            </span>
+            <span class="wallet-summary-balance">$${usdt}<small>USDT</small></span>
+            <i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
+          </button>
+          ${isExpanded ? `
+            <div class="wallet-card-details">
               <div class="wallet-address-row">
-                <span class="code-address" style="font-size:11px;">${formatShortAddress(w.address)}</span>
-                <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy Address">
-                  <i data-lucide="copy" class="icon-xs"></i>
-                </button>
-                <span class="badge ${badgeClass}" style="font-size:9px; padding:1px 5px;">${typeLabel}</span>
+                <span class="code-address">${formatShortAddress(w.address)}</span>
+                <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy address"><i data-lucide="copy" class="icon-xs"></i></button>
+                <span class="badge ${badgeClass}">${typeLabel}</span>
               </div>
-            </div>
-
-            <!-- 3-Dot Dropdown Menu -->
-            <div class="dropdown" id="dropdown-wallet-${w.id}">
-              <button type="button" class="dropdown-toggle" onclick="app.toggleWalletDropdown(${w.id}, event)" title="Wallet Actions" style="padding:2px 4px;">
-                <i data-lucide="more-horizontal" class="icon-sm"></i>
-              </button>
-              <div class="dropdown-menu">
-                <button type="button" class="dropdown-item" onclick="app.useWalletForPayment(${w.id})">
-                  <i data-lucide="arrow-right" class="icon-sm"></i>
-                  <span>Use for Payment</span>
-                </button>
-                <button type="button" class="dropdown-item" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')">
-                  <i data-lucide="pencil" class="icon-sm"></i>
-                  <span>Rename</span>
-                </button>
-                ${needsCeloFee ? `
-                <button type="button" class="dropdown-item" onclick="app.fillCeloFee(${w.id}, event)" style="color:var(--celo-green-dark); font-weight:600;">
-                  <i data-lucide="fuel" class="icon-sm" style="color:var(--celo-green);"></i>
-                  <span>Fill CELO Fee (+0.05 CELO)</span>
-                </button>
-                ` : ''}
-                <button type="button" class="dropdown-item" onclick="app.refreshSingleWallet(${w.id})">
-                  <i data-lucide="refresh-cw" class="icon-sm"></i>
-                  <span>Refresh Balance</span>
-                </button>
-                <button type="button" class="dropdown-item danger" onclick="app.handleDeleteWallet(${w.id})">
-                  <i data-lucide="trash-2" class="icon-sm"></i>
-                  <span>Remove Wallet</span>
-                </button>
+              <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}</strong></span><button type="button" class="btn btn-secondary btn-sm" onclick="app.refreshSingleWallet(${w.id})"><i data-lucide="refresh-cw" class="icon-xs"></i> Refresh</button></div>
+              <div class="wallet-detail-actions">
+                <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
+                <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
+                <div class="dropdown" id="dropdown-wallet-${w.id}"><button type="button" class="dropdown-toggle" onclick="app.toggleWalletDropdown(${w.id}, event)" title="More wallet actions"><i data-lucide="more-horizontal" class="icon-sm"></i></button><div class="dropdown-menu">
+                  <button type="button" class="dropdown-item" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')"><i data-lucide="pencil" class="icon-sm"></i><span>Rename</span></button>
+                  ${needsCeloFee ? `<button type="button" class="dropdown-item" onclick="app.fillCeloFee(${w.id}, event)"><i data-lucide="fuel" class="icon-sm"></i><span>Fill CELO Fee</span></button>` : ''}
+                  <button type="button" class="dropdown-item danger" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-sm"></i><span>Remove Wallet</span></button>
+                </div></div>
               </div>
-            </div>
-          </div>
-
-          <div class="wallet-balance-row">
-            <div>
-              <div class="wallet-balance-label">USDT</div>
-              <div class="wallet-usdt-amount">$${usdt}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="wallet-balance-label">Gas</div>
-              <div class="wallet-celo-amount" style="justify-content:flex-end;">
-                <span>${celo} CELO</span>
-                ${needsCeloFee ? `
-                <button type="button" class="btn-fill-fee-pill" onclick="app.fillCeloFee(${w.id}, event)" title="Fill 0.05 CELO gas fee from faucet wallet">
-                  <i data-lucide="fuel" class="icon-xs"></i>
-                  <span>+ Fee</span>
-                </button>
-                ` : ''}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <button class="btn ${isSelected ? 'btn-secondary' : 'btn-outline-sm'}" style="width:100%; font-size:11px; padding:5px 8px; font-weight:600; justify-content:center;" onclick="app.useWalletForPayment(${w.id})">
-              <i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>
-              <span>${isSelected ? 'Selected for Payment' : 'Use for Payment'}</span>
-            </button>
-          </div>
+            </div>` : ''}
         </div>
       `;
     });
 
     container.innerHTML = html;
     renderIcons();
+  }
+
+  function toggleWalletDetails(walletId) {
+    state.expandedWalletId = String(state.expandedWalletId) === String(walletId) ? null : walletId;
+    document.querySelectorAll('.dropdown').forEach((dropdown) => dropdown.classList.remove('open'));
+    renderWalletsList();
   }
 
   function toggleWalletDropdown(walletId, event) {
@@ -2166,6 +2201,7 @@ const app = (function () {
 
     const pkInput = document.getElementById('import-private-key');
     const labelInput = document.getElementById('import-wallet-label');
+    renderWorkspaceSelect();
     if (pkInput) pkInput.value = '';
     if (labelInput) labelInput.value = getNextWalletName();
     renderIcons();
@@ -2232,6 +2268,7 @@ const app = (function () {
 
     const name = labelInput.value.trim();
     const rawKey = pkInput.value.trim();
+    const workspaceId = document.getElementById('import-wallet-workspace')?.value;
 
     const words = rawKey.split(/\s+/);
     if (words.length >= 12 || rawKey.includes(' ')) {
@@ -2252,6 +2289,7 @@ const app = (function () {
           private_key: rawKey,
           name: walletName,
           label: walletName,
+          workspace_id: workspaceId || undefined,
         }),
       });
 
@@ -3062,10 +3100,14 @@ const app = (function () {
     cancelPendingPayment,
     cancelActiveFromModal,
     openAddWalletModal,
+    openCreateWorkspaceModal,
+    submitCreateWorkspace,
+    selectWalletWorkspace,
     handleConnectInBrowserWallet,
     submitImportWallet,
     handleDeleteWallet,
     setWalletGridColumns,
+    toggleWalletDetails,
     openWalletHistory,
     loadPaymentsHistory,
     loadProfile,

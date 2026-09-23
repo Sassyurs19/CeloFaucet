@@ -467,6 +467,59 @@ async def api_get_me(request: web.Request) -> web.Response:
 # 2. WALLET MANAGEMENT API (SUPPORTS UNLIMITED / 20+ WALLETS PER USER)
 # =========================================================================
 
+async def api_get_workspaces(request: web.Request) -> web.Response:
+    """Return only the current user's wallet workspaces."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        workspaces = await db.get_user_workspaces(user_id)
+    except Exception:
+        logger.exception("Unable to read wallet workspaces for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet workspaces are temporarily unavailable. Please try again later."}, status=503)
+    return web.json_response({"workspaces": workspaces})
+
+
+async def api_create_workspace(request: web.Request) -> web.Response:
+    """Create a simple, user-owned workspace without changing existing wallets."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    name = str(data.get("name", "")).strip()
+    if not name or len(name) > 40:
+        return web.json_response({"error": "Workspace name must be between 1 and 40 characters."}, status=400)
+    try:
+        workspace = await db.create_user_workspace(user_id, name)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("Unable to create wallet workspace for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet workspace could not be created. Please try again later."}, status=503)
+    return web.json_response({"success": True, "workspace": workspace}, status=201)
+
+
+async def _workspace_for_request(data: dict, user_id: int) -> tuple[int | None, web.Response | None]:
+    """Resolve a supplied workspace ID while enforcing ownership server-side."""
+    raw_workspace_id = data.get("workspace_id")
+    if raw_workspace_id in (None, ""):
+        try:
+            return await db.ensure_personal_workspace(user_id), None
+        except Exception:
+            logger.exception("Unable to resolve personal workspace for user ID %s.", user_id)
+            return None, web.json_response({"error": "Wallet workspace is temporarily unavailable. Please try again later."}, status=503)
+    try:
+        workspace_id = int(raw_workspace_id)
+    except (TypeError, ValueError):
+        return None, web.json_response({"error": "Invalid workspace."}, status=400)
+    workspace = await db.get_user_workspace_by_id(workspace_id, user_id)
+    if not workspace:
+        return None, web.json_response({"error": "Workspace not found."}, status=404)
+    return workspace_id, None
+
 async def api_get_wallets(request: web.Request) -> web.Response:
     """Retrieve all wallets for the authenticated user with live balances fetched concurrently."""
     user_id = get_user_id_from_request(request)
@@ -476,7 +529,12 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     if not await celo_client.is_connected():
         return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
 
-    raw_wallets = await db.get_user_wallets(user_id)
+    try:
+        await db.ensure_personal_workspace(user_id)
+        raw_wallets = await db.get_user_wallets(user_id)
+    except Exception:
+        logger.exception("Unable to access wallet storage for user ID %s.", user_id)
+        return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
 
     async def fetch_wallet_info(w):
         addr = w["address"]
@@ -492,6 +550,7 @@ async def api_get_wallets(request: web.Request) -> web.Response:
             "address": addr,
             "type": w.get("wallet_type", "connected"),
             "wallet_type": w.get("wallet_type", "connected"),
+            "workspace_id": w.get("workspace_id"),
             "celo_balance": f"{celo_bal:.4f}",
             "usat_balance": f"{u_val:.2f}",
             "created_at": w.get("created_at"),
@@ -529,6 +588,9 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
 
     addr = str(data.get("address", "")).strip()
     name = str(data.get("name") or data.get("label") or "Connected Wallet").strip()
+    workspace_id, workspace_error = await _workspace_for_request(data, user_id)
+    if workspace_error is not None:
+        return workspace_error
 
     is_val, chk_addr, err_msg = validate_celo_address(addr)
     if not is_val or not chk_addr:
@@ -572,6 +634,7 @@ async def api_connect_wallet(request: web.Request) -> web.Response:
         wallet_type="connected",
         encrypted_private_key=None,
         user_id=user_id,
+        workspace_id=workspace_id,
     )
     wallet_name = name
 
@@ -610,6 +673,9 @@ async def api_import_wallet(request: web.Request) -> web.Response:
 
     name = str(data.get("name") or data.get("label") or "Imported Wallet").strip() or "Imported Wallet"
     raw_key = str(data.get("private_key", "")).strip()
+    workspace_id, workspace_error = await _workspace_for_request(data, user_id)
+    if workspace_error is not None:
+        return workspace_error
 
     # Strict check: reject 12/24-word recovery phrases
     # If key contains multiple words separated by spaces or punctuation
@@ -686,6 +752,7 @@ async def api_import_wallet(request: web.Request) -> web.Response:
             wallet_type="imported",
             encrypted_private_key=encrypted_key,
             user_id=user_id,
+            workspace_id=workspace_id,
         )
     except Exception:
         logger.exception("Unable to save imported wallet for user ID %s.", user_id)
@@ -1875,6 +1942,8 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/auth/me", api_get_me)
 
     # Wallets
+    app.router.add_get("/api/workspaces", api_get_workspaces)
+    app.router.add_post("/api/workspaces", api_create_workspace)
     app.router.add_get("/api/wallets", api_get_wallets)
     app.router.add_post("/api/wallets/connect", api_connect_wallet)
     app.router.add_post("/api/wallets/import", api_import_wallet)

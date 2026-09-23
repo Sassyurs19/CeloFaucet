@@ -793,6 +793,21 @@ i[data-lucide], svg.lucide {
   justify-content: flex-end;
 }
 
+.workspace-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-picker select {
+  width: auto;
+  max-width: 185px;
+  min-height: 34px;
+  padding: 5px 28px 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .wallet-layout-picker {
   display: inline-flex;
   align-items: center;
@@ -848,7 +863,65 @@ i[data-lucide], svg.lucide {
   box-shadow: 0 4px 12px rgba(53, 208, 127, 0.1);
 }
 
-.wallet-card { cursor: pointer; }
+.wallet-card { cursor: default; }
+
+.wallet-card-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wallet-card-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.wallet-summary-balance {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.wallet-summary-balance small {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.wallet-expand-icon { color: var(--text-muted); }
+
+.wallet-card-details {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.wallet-detail-stats,
+.wallet-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wallet-detail-stats { color: var(--text-secondary); font-size: 12px; }
+.wallet-detail-stats strong { color: var(--text-primary); }
+.wallet-detail-actions { justify-content: flex-start; }
+.wallet-detail-actions .dropdown { margin-left: auto; }
 
 .wallet-history-modal { max-width: 620px; }
 
@@ -928,6 +1001,9 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-card-title { max-width: 100px; }
   .wallets-grid[data-columns="3"] .wallet-address-row,
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
+  .workspace-picker { width: 100%; }
+  .workspace-picker select { flex: 1; max-width: none; }
+  .wallet-detail-actions { flex-wrap: wrap; }
 }
 
 .wallet-card.active-wallet {

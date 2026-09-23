@@ -161,6 +161,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
                     telegram_id INTEGER NOT NULL,
+                    workspace_id INTEGER,
                     wallet_name TEXT NOT NULL,
                     address TEXT NOT NULL,
                     wallet_type TEXT NOT NULL, -- 'connected' or 'imported'
@@ -175,6 +176,23 @@ class Database:
                 w_cols = [row["name"] for row in await cur.fetchall()]
                 if "user_id" not in w_cols:
                     await conn.execute("ALTER TABLE user_wallets ADD COLUMN user_id INTEGER;")
+                if "workspace_id" not in w_cols:
+                    await conn.execute("ALTER TABLE user_wallets ADD COLUMN workspace_id INTEGER;")
+
+            # Wallets are grouped into user-owned workspaces.  Existing wallets are
+            # placed in the Personal Workspace below; no wallet records are removed.
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS wallet_workspaces (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    telegram_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                );
+                """
+            )
 
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_wallets_telegram_id ON user_wallets(telegram_id);"
@@ -184,6 +202,12 @@ class Database:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_wallets_address ON user_wallets(address);"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_wallets_workspace ON user_wallets(workspace_id);"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wallet_workspaces_owner ON wallet_workspaces(user_id, telegram_id);"
             )
 
             # 3. Admin Receiving Wallets table
@@ -281,6 +305,25 @@ class Database:
                 WHERE user_id IS NULL;
                 """
             )
+            # Non-destructively create the default workspace for every existing
+            # wallet owner, then attach any previously ungrouped wallet to it.
+            await conn.execute(
+                """
+                INSERT OR IGNORE INTO wallet_workspaces (user_id, telegram_id, name)
+                SELECT id, telegram_id, 'Personal Workspace' FROM users
+                WHERE id IN (SELECT DISTINCT user_id FROM user_wallets WHERE user_id IS NOT NULL);
+                """
+            )
+            await conn.execute(
+                """
+                UPDATE user_wallets
+                SET workspace_id = (
+                    SELECT id FROM wallet_workspaces ws
+                    WHERE ws.user_id = user_wallets.user_id AND ws.name = 'Personal Workspace'
+                )
+                WHERE workspace_id IS NULL AND user_id IS NOT NULL;
+                """
+            )
             await conn.commit()
 
             # 5. Legacy faucet claims table (preserved for backwards compatibility)
@@ -327,7 +370,9 @@ class Database:
         pool = await self._postgres_pool()
         statements = [
             """CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL UNIQUE, username TEXT, first_name TEXT, full_name TEXT, mobile_number TEXT, normalized_mobile TEXT, password_hash TEXT, status TEXT DEFAULT 'active', last_login_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
-            """CREATE TABLE IF NOT EXISTS user_wallets (id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_name TEXT NOT NULL, address TEXT NOT NULL, wallet_type TEXT NOT NULL, encrypted_private_key TEXT, metadata TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            """CREATE TABLE IF NOT EXISTS wallet_workspaces (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), telegram_id BIGINT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, name))""",
+            """CREATE TABLE IF NOT EXISTS user_wallets (id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, workspace_id BIGINT REFERENCES wallet_workspaces(id), wallet_name TEXT NOT NULL, address TEXT NOT NULL, wallet_type TEXT NOT NULL, encrypted_private_key TEXT, metadata TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            "ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS workspace_id BIGINT REFERENCES wallet_workspaces(id)",
             """CREATE TABLE IF NOT EXISTS receiving_wallets (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
             """CREATE TABLE IF NOT EXISTS saved_recipients (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), telegram_id BIGINT NOT NULL, name TEXT NOT NULL, address TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, address))""",
             """CREATE TABLE IF NOT EXISTS usat_payments (id BIGSERIAL PRIMARY KEY, payment_id TEXT NOT NULL UNIQUE, user_id BIGINT REFERENCES users(id), telegram_id BIGINT NOT NULL, wallet_type TEXT NOT NULL, from_address TEXT NOT NULL, to_address TEXT NOT NULL, receiving_wallet_name TEXT NOT NULL, amount_usat TEXT NOT NULL DEFAULT '2.00', amount_base_units NUMERIC(78,0) NOT NULL, status TEXT NOT NULL, tx_hash TEXT UNIQUE, block_number BIGINT, celo_funded INTEGER DEFAULT 0, celo_fund_tx_hash TEXT UNIQUE, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
@@ -337,6 +382,8 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_users_normalized_mobile ON users(normalized_mobile)",
             "CREATE INDEX IF NOT EXISTS idx_wallets_owner ON user_wallets(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_wallets_address ON user_wallets(address)",
+            "CREATE INDEX IF NOT EXISTS idx_wallets_workspace ON user_wallets(workspace_id)",
+            "CREATE INDEX IF NOT EXISTS idx_wallet_workspaces_owner ON wallet_workspaces(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_saved_recipients_owner ON saved_recipients(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_payments_owner ON usat_payments(user_id, telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_payments_status ON usat_payments(status)",
@@ -347,6 +394,25 @@ class Database:
             async with conn.transaction():
                 for statement in statements:
                     await conn.execute(statement)
+                await conn.execute(
+                    """
+                    INSERT INTO wallet_workspaces (user_id, telegram_id, name)
+                    SELECT u.id, u.telegram_id, 'Personal Workspace'
+                    FROM users u
+                    WHERE EXISTS (SELECT 1 FROM user_wallets w WHERE w.user_id = u.id)
+                    ON CONFLICT (user_id, name) DO NOTHING
+                    """
+                )
+                await conn.execute(
+                    """
+                    UPDATE user_wallets w
+                    SET workspace_id = ws.id
+                    FROM wallet_workspaces ws
+                    WHERE w.workspace_id IS NULL
+                      AND w.user_id = ws.user_id
+                      AND ws.name = 'Personal Workspace'
+                    """
+                )
 
     # --- User Management ---
 
@@ -612,6 +678,7 @@ class Database:
         encrypted_private_key: Optional[str] = None,
         metadata: Optional[str] = None,
         user_id: Optional[int] = None,
+        workspace_id: Optional[int] = None,
     ) -> int:
         """Add a wallet for a user. Address is checksummed."""
         chk_address = Web3.to_checksum_address(address)
@@ -621,14 +688,18 @@ class Database:
                     u_row = await cur.fetchone()
                     user_id = u_row["id"] if u_row else telegram_id
 
+            if workspace_id is None:
+                workspace_id = await self.ensure_personal_workspace(user_id)
+
             cur = await conn.execute(
                 """
-                INSERT INTO user_wallets (user_id, telegram_id, wallet_name, address, wallet_type, encrypted_private_key, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO user_wallets (user_id, telegram_id, workspace_id, wallet_name, address, wallet_type, encrypted_private_key, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     user_id,
                     telegram_id,
+                    workspace_id,
                     wallet_name.strip(),
                     chk_address,
                     wallet_type,
@@ -638,6 +709,102 @@ class Database:
             )
             await conn.commit()
             return cur.lastrowid or 0
+
+    async def ensure_personal_workspace(self, user_identifier: int) -> int:
+        """Return the owner's default workspace and backfill their older wallets safely."""
+        async with self.connect() as conn:
+            async with conn.execute(
+                "SELECT id, telegram_id FROM users WHERE id = ? OR telegram_id = ? ORDER BY id ASC LIMIT 1;",
+                (user_identifier, user_identifier),
+            ) as cur:
+                user = await cur.fetchone()
+            if not user:
+                raise ValueError("User not found for workspace")
+            user_id, telegram_id = user["id"], user["telegram_id"]
+            await conn.execute(
+                """
+                INSERT INTO wallet_workspaces (user_id, telegram_id, name)
+                VALUES (?, ?, 'Personal Workspace')
+                ON CONFLICT(user_id, name) DO NOTHING;
+                """,
+                (user_id, telegram_id),
+            )
+            async with conn.execute(
+                "SELECT id FROM wallet_workspaces WHERE user_id = ? AND name = 'Personal Workspace';",
+                (user_id,),
+            ) as cur:
+                workspace = await cur.fetchone()
+            if not workspace:
+                raise RuntimeError("Personal workspace could not be created")
+            workspace_id = workspace["id"]
+            await conn.execute(
+                """
+                UPDATE user_wallets SET workspace_id = ?
+                WHERE workspace_id IS NULL AND (user_id = ? OR telegram_id = ?);
+                """,
+                (workspace_id, user_id, telegram_id),
+            )
+            await conn.commit()
+            return workspace_id
+
+    async def get_user_workspaces(self, user_identifier: int) -> list[dict[str, Any]]:
+        """List only the authenticated user's workspaces, including their wallet count."""
+        await self.ensure_personal_workspace(user_identifier)
+        async with self.connect() as conn:
+            async with conn.execute(
+                """
+                SELECT ws.id, ws.name, ws.created_at, COUNT(w.id) AS wallet_count
+                FROM wallet_workspaces ws
+                LEFT JOIN user_wallets w ON w.workspace_id = ws.id
+                WHERE ws.user_id = ? OR ws.telegram_id = ?
+                GROUP BY ws.id, ws.name, ws.created_at
+                ORDER BY ws.id ASC;
+                """,
+                (user_identifier, user_identifier),
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+
+    async def create_user_workspace(self, user_identifier: int, name: str) -> dict[str, Any]:
+        """Create a named workspace for the current owner only."""
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Workspace name is required")
+        async with self.connect() as conn:
+            async with conn.execute(
+                "SELECT id, telegram_id FROM users WHERE id = ? OR telegram_id = ? ORDER BY id ASC LIMIT 1;",
+                (user_identifier, user_identifier),
+            ) as cur:
+                user = await cur.fetchone()
+            if not user:
+                raise ValueError("User not found for workspace")
+            try:
+                await conn.execute(
+                    "INSERT INTO wallet_workspaces (user_id, telegram_id, name) VALUES (?, ?, ?);",
+                    (user["id"], user["telegram_id"], clean_name),
+                )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("A workspace with this name already exists") from None
+                raise
+            async with conn.execute(
+                "SELECT id, name, created_at FROM wallet_workspaces WHERE user_id = ? AND name = ?;",
+                (user["id"], clean_name),
+            ) as cur:
+                workspace = await cur.fetchone()
+            await conn.commit()
+            return dict(workspace) if workspace else {"name": clean_name}
+
+    async def get_user_workspace_by_id(self, workspace_id: int, user_identifier: int) -> Optional[dict[str, Any]]:
+        async with self.connect() as conn:
+            async with conn.execute(
+                """
+                SELECT * FROM wallet_workspaces
+                WHERE id = ? AND (user_id = ? OR telegram_id = ?);
+                """,
+                (workspace_id, user_identifier, user_identifier),
+            ) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
 
     async def update_wallet_private_key(
         self,

@@ -409,10 +409,17 @@
                 <span id="wallets-summary-usdt" style="font-size:16px; font-weight:800; color:var(--celo-green-dark);">$0.00</span>
               </div>
               <p class="description" style="margin:2px 0 0 0; font-size:12px;">
-                <span id="wallets-summary-count" style="font-weight:700;">0</span> wallets connected for checkout & payments
+                <span id="wallets-summary-count" style="font-weight:700;">0</span> wallets in your workspaces
               </p>
             </div>
             <div class="wallets-header-actions">
+              <div class="workspace-picker">
+                <label for="wallet-workspace-select" class="sr-only">Workspace</label>
+                <select id="wallet-workspace-select" class="form-input" onchange="app.selectWalletWorkspace(this.value)" title="Choose workspace"></select>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openCreateWorkspaceModal()" title="New workspace">
+                  <i data-lucide="folder-plus" class="icon-sm"></i><span>Workspace</span>
+                </button>
+              </div>
               <div class="wallet-layout-picker" role="group" aria-label="Wallet grid layout">
                 <span class="wallet-layout-label">Layout</span>
                 <button type="button" class="wallet-layout-option" data-wallet-columns="1" onclick="app.setWalletGridColumns(1)" title="One column">1</button>
@@ -850,13 +857,17 @@
       </div>
 
       <div id="add-wallet-step-import" style="padding-top:0;">
-        <p class="description">Enter a wallet name and private key.</p>
+        <p class="description">Choose a workspace, then enter a wallet name and private key.</p>
 
         <div class="card-surface" style="border-left: 3px solid var(--accent-blue); padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary);">
           <strong>Private key only.</strong> Seed phrases are not supported.
         </div>
 
         <form id="form-import-key" onsubmit="app.submitImportWallet(event)">
+          <div class="form-group">
+            <label class="form-label" for="import-wallet-workspace">Workspace</label>
+            <select id="import-wallet-workspace" class="form-input" required></select>
+          </div>
           <div class="form-group">
             <label class="form-label">Wallet Name</label>
             <input type="text" id="import-wallet-label" class="form-input" placeholder="Wallet 1" required maxlength="40">
@@ -879,6 +890,29 @@
           </div>
         </form>
       </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL: CREATE WALLET WORKSPACE
+       ========================================================= -->
+  <div id="modal-create-workspace" class="modal-overlay">
+    <div class="modal-card" style="max-width:420px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <i data-lucide="folder-plus" class="icon-sm" style="color:var(--accent-blue);"></i>
+          <span>New Workspace</span>
+        </h3>
+        <button class="modal-close" onclick="app.closeModal('modal-create-workspace')">&times;</button>
+      </div>
+      <form onsubmit="app.submitCreateWorkspace(event)">
+        <p class="description">Keep wallets together, such as Personal, Business, or Savings.</p>
+        <div class="form-group">
+          <label class="form-label" for="workspace-name">Workspace Name</label>
+          <input id="workspace-name" class="form-input" maxlength="40" required placeholder="e.g. Personal">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Create Workspace</button>
+      </form>
     </div>
   </div>
 
@@ -1007,14 +1041,6 @@
             <span class="receipt-val" id="receipt-amount-paid" style="font-size:16px; font-weight:800; color:var(--celo-green-dark);">0.00 USDT</span>
           </div>
           <div class="receipt-row">
-            <span class="receipt-label">Status</span>
-            <span class="receipt-val"><span class="badge badge-green">Confirmed on-chain</span></span>
-          </div>
-          <div class="receipt-row">
-            <span class="receipt-label">From Wallet</span>
-            <span class="receipt-val" id="receipt-from-name">My Wallet</span>
-          </div>
-          <div class="receipt-row">
             <span class="receipt-label">Recipient</span>
             <span class="receipt-val">
               <span class="code-address" id="receipt-to-addr">0x...</span>
@@ -1031,14 +1057,6 @@
                 <i data-lucide="copy" class="icon-sm"></i>
               </button>
             </span>
-          </div>
-          <div class="receipt-row">
-            <span class="receipt-label">Network</span>
-            <span class="receipt-val">Celo Mainnet (Chain 42220)</span>
-          </div>
-          <div class="receipt-row">
-            <span class="receipt-label">Date & Time</span>
-            <span class="receipt-val" id="receipt-timestamp">—</span>
           </div>
         </div>
 
