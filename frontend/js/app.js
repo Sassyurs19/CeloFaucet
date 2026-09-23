@@ -594,6 +594,8 @@ const app = (function () {
     if (viewId === 'dashboard') {
       loadDashboardData();
     } else if (viewId === 'wallets') {
+      // Always begin with the workspace chooser so older wallets remain easy to find.
+      state.activeWorkspaceId = null;
       loadWallets();
     } else if (viewId === 'payments') {
       loadPaymentsHistory();
@@ -1041,7 +1043,7 @@ const app = (function () {
     state.workspaces = data.workspaces || [];
     const activeStillExists = state.workspaces.some((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
     if (!activeStillExists) {
-      state.activeWorkspaceId = state.workspaces[0] ? String(state.workspaces[0].id) : null;
+      state.activeWorkspaceId = null;
     }
     renderWorkspaceSelect();
   }
@@ -1049,6 +1051,9 @@ const app = (function () {
   function renderWorkspaceSelect() {
     const importSelect = document.getElementById('import-wallet-workspace');
     const workspaceList = document.getElementById('wallet-workspace-list');
+    const workspaceBar = document.querySelector('.wallet-workspace-bar');
+    const addWalletButton = document.getElementById('btn-wallet-add');
+    const createWorkspaceButton = document.getElementById('btn-create-workspace');
     const options = (state.workspaces || []).map((workspace) =>
       `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}${workspace.wallet_count !== undefined ? ` (${workspace.wallet_count})` : ''}</option>`
     ).join('');
@@ -1060,19 +1065,38 @@ const app = (function () {
       if (!element.value && element.options.length) element.selectedIndex = 0;
     });
     if (workspaceList) {
-      workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
-        const active = String(workspace.id) === String(state.activeWorkspaceId);
-        return `<button type="button" class="workspace-tab ${active ? 'active' : ''}" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
-          <span>${escapeHtml(workspace.name)}</span><small>${Number(workspace.wallet_count || 0)} wallets</small>
-          ${active ? `<i data-lucide="pencil" class="icon-xs workspace-tab-edit" onclick="event.stopPropagation(); app.openRenameWorkspaceModal(${workspace.id})" title="Rename workspace"></i>` : ''}
-        </button>`;
-      }).join('');
+      const activeWorkspace = (state.workspaces || []).find((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
+      if (activeWorkspace) {
+        workspaceBar?.classList.remove('is-chooser');
+        workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
+          <div class="workspace-current"><span>${escapeHtml(activeWorkspace.name)}</span><small>${Number(activeWorkspace.wallet_count || 0)} wallets</small><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button></div>`;
+        if (addWalletButton) addWalletButton.style.display = 'inline-flex';
+        if (createWorkspaceButton) createWorkspaceButton.style.display = 'none';
+      } else {
+        workspaceBar?.classList.add('is-chooser');
+        workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
+          const workspaceWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
+          const balance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+          return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
+            <i data-lucide="wallet" class="icon-sm"></i><span>${escapeHtml(workspace.name)}</span><strong>$${balance.toFixed(2)}</strong><small>${Number(workspace.wallet_count || 0)} wallets · Enter</small>
+          </button>`;
+        }).join('');
+        if (addWalletButton) addWalletButton.style.display = 'none';
+        if (createWorkspaceButton) createWorkspaceButton.style.display = 'inline-flex';
+      }
       renderIcons();
     }
   }
 
   function selectWalletWorkspace(workspaceId) {
     state.activeWorkspaceId = workspaceId || null;
+    state.expandedWalletId = null;
+    renderWorkspaceSelect();
+    renderWalletsList();
+  }
+
+  function backToWorkspaces() {
+    state.activeWorkspaceId = null;
     state.expandedWalletId = null;
     renderWorkspaceSelect();
     renderWalletsList();
@@ -1096,7 +1120,7 @@ const app = (function () {
         body: JSON.stringify({ name }),
       });
       await loadWorkspaces();
-      state.activeWorkspaceId = String(result.workspace?.id || state.activeWorkspaceId);
+      state.activeWorkspaceId = null;
       renderWorkspaceSelect();
       renderWalletsList();
       closeModal('modal-create-workspace');
@@ -1959,6 +1983,12 @@ const app = (function () {
     if (summaryAmount) summaryAmount.textContent = `$${workspaceBalance.toFixed(2)}`;
     if (summaryCount) summaryCount.textContent = visibleWallets.length;
 
+    if (!state.activeWorkspaceId) {
+      container.innerHTML = `<div class="card workspace-empty-state"><i data-lucide="folder-open" class="icon-lg"></i><h3>Choose a Workspace</h3><p class="description">Personal Workspace contains your existing wallets. New workspaces start empty until you add a wallet.</p></div>`;
+      renderIcons();
+      return;
+    }
+
     if (visibleWallets.length === 0) {
       container.innerHTML = `
         <div class="card" style="text-align:center; padding:36px 20px; grid-column: 1 / -1;">
@@ -2239,12 +2269,24 @@ const app = (function () {
   }
 
   function getNextWalletName() {
-    const highestNumber = (state.wallets || []).reduce((highest, wallet) => {
+    const workspaceId = document.getElementById('import-wallet-workspace')?.value || state.activeWorkspaceId;
+    const workspace = (state.workspaces || []).find((item) => String(item.id) === String(workspaceId));
+    const workspaceName = (workspace?.name || '').trim();
+    const prefix = /^personal workspace$/i.test(workspaceName) || !workspaceName
+      ? 'Wallet '
+      : `${workspaceName.replace(/\s+/g, '')}`;
+    const expression = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+)?(\\d+)$`, 'i');
+    const highestNumber = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspaceId)).reduce((highest, wallet) => {
       const name = wallet.wallet_name || wallet.name || wallet.label || '';
-      const match = /^wallet\s+(\d+)$/i.exec(name.trim());
+      const match = expression.exec(name.trim());
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
-    return `Wallet ${highestNumber + 1}`;
+    return `${prefix}${highestNumber + 1}`;
+  }
+
+  function updateImportWalletDefaultName() {
+    const labelInput = document.getElementById('import-wallet-label');
+    if (labelInput) labelInput.value = getNextWalletName();
   }
 
   async function handleConnectInBrowserWallet() {
@@ -3136,6 +3178,8 @@ const app = (function () {
     openRenameWorkspaceModal,
     submitRenameWorkspace,
     selectWalletWorkspace,
+    backToWorkspaces,
+    updateImportWalletDefaultName,
     handleConnectInBrowserWallet,
     submitImportWallet,
     handleDeleteWallet,

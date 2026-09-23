@@ -809,6 +809,76 @@ i[data-lucide], svg.lucide {
   padding: 2px;
 }
 
+.wallet-workspace-bar.is-chooser {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.wallet-workspace-bar.is-chooser .wallet-workspace-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  overflow: visible;
+}
+
+.wallet-workspace-bar.is-chooser > .btn { align-self: flex-start; }
+
+.workspace-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 5px 8px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-choice:hover { border-color: var(--celo-green); background: rgba(53, 208, 127, 0.05); }
+.workspace-choice > i { color: var(--celo-green-dark); }
+.workspace-choice strong { color: var(--celo-green-dark); font-size: 14px; }
+.workspace-choice small { grid-column: 2 / -1; color: var(--text-muted); font-size: 11px; }
+
+.workspace-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-blue);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.workspace-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: rgba(53, 208, 127, 0.08);
+  color: var(--celo-green-dark);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workspace-current small { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+
+.workspace-empty-state {
+  grid-column: 1 / -1;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.workspace-empty-state > i { color: var(--text-muted); }
+.workspace-empty-state h3 { margin: 10px 0 4px; font-size: 17px; }
+
 .workspace-tab {
   display: inline-grid;
   grid-template-columns: auto auto;
@@ -1037,6 +1107,7 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
   .wallet-workspace-bar { align-items: stretch; flex-direction: column; }
   .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
+  .wallet-workspace-bar.is-chooser .wallet-workspace-list { grid-template-columns: 1fr; }
   .wallet-detail-actions { flex-wrap: wrap; }
 }
 

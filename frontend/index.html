@@ -413,7 +413,7 @@
               </p>
             </div>
             <div class="wallets-header-actions">
-              <button class="btn btn-primary btn-sm" onclick="app.openAddWalletModal()">
+              <button id="btn-wallet-add" class="btn btn-primary btn-sm" onclick="app.openAddWalletModal()" style="display:none;">
                 <i data-lucide="plus" class="icon-sm"></i>
                 <span>+ Add Wallet</span>
               </button>
@@ -422,7 +422,7 @@
 
           <div class="wallet-workspace-bar" aria-label="Wallet workspaces">
             <div id="wallet-workspace-list" class="wallet-workspace-list"></div>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="app.openCreateWorkspaceModal()">
+            <button id="btn-create-workspace" type="button" class="btn btn-secondary btn-sm" onclick="app.openCreateWorkspaceModal()">
               <i data-lucide="folder-plus" class="icon-sm"></i><span>New Workspace</span>
             </button>
           </div>
@@ -856,7 +856,7 @@
         <form id="form-import-key" onsubmit="app.submitImportWallet(event)">
           <div class="form-group">
             <label class="form-label" for="import-wallet-workspace">Workspace</label>
-            <select id="import-wallet-workspace" class="form-input" required></select>
+            <select id="import-wallet-workspace" class="form-input" required onchange="app.updateImportWalletDefaultName()"></select>
           </div>
           <div class="form-group">
             <label class="form-label">Wallet Name</label>
