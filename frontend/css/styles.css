@@ -815,9 +815,10 @@ i[data-lucide], svg.lucide {
 }
 
 .wallet-workspace-bar.is-chooser .wallet-workspace-list {
-  display: flex;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: visible;
+  padding-bottom: 2px;
 }
 
 .workspace-choice {
@@ -832,7 +833,7 @@ i[data-lucide], svg.lucide {
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
-  flex: 1 0 190px;
+  width: 100%;
   min-height: 76px;
 }
 
@@ -1100,7 +1101,6 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
   .wallet-workspace-bar { align-items: stretch; flex-direction: column; }
   .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
-  .workspace-choice { flex-basis: 190px; }
   .wallet-detail-actions { flex-wrap: wrap; }
 }
 
