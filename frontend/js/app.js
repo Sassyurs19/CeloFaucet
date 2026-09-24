@@ -83,6 +83,19 @@ const app = (function () {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   }
 
+  function paymentDateLabel(value) {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const daysAgo = Math.round((startToday - startDate) / 86400000);
+    if (daysAgo === 0) return 'Today';
+    if (daysAgo === 1) return 'Yesterday';
+    return date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
   function setBalanceTone(element, value) {
     if (!element) return;
     const isAvailable = Number(value) > 0;
@@ -2410,6 +2423,7 @@ const app = (function () {
 
       let tableHtml = '';
       let mobileHtml = '';
+      let currentDateGroup = '';
 
       payments.forEach((p) => {
         const amtStr = parseFloat(p.amount || 0).toFixed(2);
@@ -2443,6 +2457,12 @@ const app = (function () {
           : '<span style="color:var(--text-muted);">-</span>';
 
         const dateStr = p.created_at ? new Date(p.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+        const dateGroup = paymentDateLabel(p.created_at);
+        if (dateGroup !== currentDateGroup) {
+          currentDateGroup = dateGroup;
+          tableHtml += `<tr class="payment-date-group"><td colspan="7">${escapeHtml(dateGroup)}</td></tr>`;
+          mobileHtml += `<div class="payment-date-group-mobile">${escapeHtml(dateGroup)}</div>`;
+        }
 
         // Desktop Table Row
         tableHtml += `
@@ -2618,6 +2638,8 @@ const app = (function () {
       loadAdminPayments();
     } else if (tabName === 'wallets') {
       loadAdminWallets();
+    } else if (tabName === 'users') {
+      loadAdminUsers();
     } else if (tabName === 'funding') {
       loadAdminFunding();
     } else if (tabName === 'settings') {
@@ -2660,6 +2682,7 @@ const app = (function () {
     searchDebounceTimers[type] = setTimeout(() => {
       if (type === 'wallets') loadAdminWallets();
       if (type === 'payments') loadAdminPayments();
+      if (type === 'users') loadAdminUsers();
     }, 300);
   }
 
@@ -2749,6 +2772,54 @@ const app = (function () {
       renderIcons();
     } catch (err) {
       showToast('Failed to load payments: ' + err.message, 'error');
+    }
+  }
+
+  async function loadAdminUsers() {
+    const container = document.getElementById('admin-users-card-list');
+    if (!container) return;
+    const search = document.getElementById('admin-users-search')?.value.trim() || '';
+    try {
+      const data = await apiRequest(`/api/admin/users?search=${encodeURIComponent(search)}`);
+      const users = data.users || [];
+      if (!users.length) {
+        container.innerHTML = '<div class="card" style="text-align:center; padding:32px; color:var(--text-muted);">No users found.</div>';
+        return;
+      }
+      container.innerHTML = users.map((user) => `
+        <button type="button" class="admin-card-item admin-user-choice" onclick="app.openAdminUserDetails(${Number(user.id)})">
+          <div class="admin-card-top"><div><strong>${escapeHtml(user.name)}</strong><div style="font-size:12px; color:var(--text-muted); margin-top:3px;">${escapeHtml(user.mobile || '')}</div></div><i data-lucide="chevron-right" class="icon-sm" style="color:var(--text-muted);"></i></div>
+          <div class="admin-card-footer"><span>${Number(user.wallets_count || 0)} wallets</span><span>${Number(user.payments_count || 0)} payments</span></div>
+        </button>`).join('');
+      renderIcons();
+    } catch (err) {
+      showToast('Failed to load users: ' + err.message, 'error');
+    }
+  }
+
+  async function openAdminUserDetails(userId) {
+    const modal = document.getElementById('modal-admin-user-details');
+    const title = document.getElementById('admin-modal-username');
+    const content = document.getElementById('admin-user-details-content');
+    if (content) content.innerHTML = '<div style="padding:20px; color:var(--text-muted); text-align:center;">Loading read-only user view…</div>';
+    if (modal) modal.classList.add('active');
+    try {
+      const data = await apiRequest(`/api/admin/users/${userId}`);
+      const user = data.user || {};
+      const workspaces = data.workspaces || [];
+      const wallets = data.wallets || [];
+      if (title) title.textContent = user.full_name || 'User Details';
+      const workspaceCards = workspaces.map((workspace) => {
+        const members = wallets.filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
+        return `<div class="admin-user-workspace"><div class="admin-user-workspace-head"><strong>${escapeHtml(workspace.name)}</strong><span>${members.length} wallets</span></div>${members.length ? members.map((wallet) => `<div class="admin-user-wallet-row"><span><strong>${escapeHtml(wallet.wallet_name || 'Wallet')}</strong><small>${escapeHtml(formatShortAddress(wallet.address))}</small></span><span>${wallet.usat_balance === null || wallet.usat_balance === undefined ? 'Balance unavailable' : `$${escapeHtml(wallet.usat_balance)} USDT`}</span></div>`).join('') : '<div class="admin-user-wallet-empty">No wallets in this workspace.</div>'}</div>`;
+      }).join('') || '<div class="admin-user-wallet-empty">No workspaces found.</div>';
+      if (content) content.innerHTML = `
+        <div class="admin-user-summary"><div><span>Workspaces</span><strong>${Number(data.workspace_count || workspaces.length)}</strong></div><div><span>Wallets</span><strong>${wallets.length}</strong></div><div><span>Payments</span><strong>${(data.payments || []).length}</strong></div></div>
+        <p class="description" style="margin:0 0 12px;">Read-only wallet view. No transfers or private keys are available here.</p>
+        <div class="admin-user-workspaces">${workspaceCards}</div>`;
+      renderIcons();
+    } catch (err) {
+      if (content) content.innerHTML = `<div style="padding:20px; color:var(--danger); text-align:center;">Unable to load this user: ${escapeHtml(err.message)}</div>`;
     }
   }
 
@@ -3141,6 +3212,7 @@ const app = (function () {
     loadPaymentsHistory,
     loadProfile,
     loadAdminView,
+    openAdminUserDetails,
     handleAdminLogin,
     handleAdminTogglePause,
     adminResetAllData,

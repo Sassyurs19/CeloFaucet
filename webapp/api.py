@@ -1351,14 +1351,8 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    try:
-        page = int(request.query.get("page", 0))
-    except ValueError:
-        page = 0
-
-    page_size = 10
     total_count = await db.get_user_payments_count(user_id)
-    payments = await db.get_user_payments(user_id, limit=page_size, offset=page * page_size)
+    payments = await db.get_user_payments(user_id, limit=None)
     wallets_by_address = {
         str(wallet.get("address", "")).lower(): wallet.get("wallet_name", "Wallet")
         for wallet in await db.get_user_wallets(user_id)
@@ -1384,8 +1378,8 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     return web.json_response({
         "payments": formatted,
         "total_count": total_count,
-        "page": page,
-        "total_pages": max(1, (total_count + page_size - 1) // page_size),
+        "page": 0,
+        "total_pages": 1,
     })
 
 
@@ -1644,7 +1638,7 @@ async def api_admin_get_users(request: web.Request) -> web.Response:
         page = 0
 
     search = str(request.query.get("search", "")).strip()
-    page_size = 15
+    page_size = 1000
     users = await db.get_all_users(limit=page_size, offset=page * page_size, search=search)
     total_users = await db.get_user_count(search=search)
 
@@ -1691,8 +1685,8 @@ async def api_admin_get_user_details(request: web.Request) -> web.Response:
             c_bal = await celo_client.get_celo_balance(w["address"])
             w["celo_balance"] = f"{c_bal:.4f}"
         except Exception:
-            w["usat_balance"] = "0.00"
-            w["celo_balance"] = "0.0000"
+            w["usat_balance"] = None
+            w["celo_balance"] = None
 
     user_info = details.get("user", {})
     safe_user = {
@@ -1709,6 +1703,8 @@ async def api_admin_get_user_details(request: web.Request) -> web.Response:
     return web.json_response({
         "user": safe_user,
         "wallets": wallets,
+        "workspaces": details.get("workspaces", []),
+        "workspace_count": len(details.get("workspaces", [])),
         "payments": details.get("payments", []),
         "total_paid": details.get("total_paid", 0.0),
     })
@@ -1725,7 +1721,7 @@ async def api_admin_get_wallets(request: web.Request) -> web.Response:
         page = 0
 
     search = str(request.query.get("search", "")).strip()
-    page_size = 20
+    page_size = 1000
 
     raw_wallets = await db.get_all_wallets_admin(limit=page_size, offset=page * page_size, search=search)
     total_wallets = await db.get_all_wallets_count_admin(search=search)
@@ -1865,8 +1861,8 @@ async def api_admin_get_payments(request: web.Request) -> web.Response:
         time_to=time_to,
     )
     payments = await db.get_all_payments(
-        limit=page_size,
-        offset=page * page_size,
+        limit=None,
+        offset=0,
         search=search,
         status_filter=status_filter,
         date_filter=date_filter,

@@ -675,6 +675,10 @@
                 <i data-lucide="wallet-cards" class="icon-sm"></i>
                 <span>Wallets</span>
               </button>
+              <button class="admin-tab-btn" data-admin-tab="users" onclick="app.switchAdminTab('users')">
+                <i data-lucide="users" class="icon-sm"></i>
+                <span>Users</span>
+              </button>
               <button class="admin-tab-btn" data-admin-tab="funding" onclick="app.switchAdminTab('funding')">
                 <i data-lucide="fuel" class="icon-sm"></i>
                 <span>CELO Funding</span>
@@ -725,6 +729,14 @@
               <div class="admin-cards-container" id="admin-wallets-card-list">
                 <!-- Loaded dynamically -->
               </div>
+            </div>
+
+            <div id="admin-tab-users" class="admin-tab-content" style="display:none;">
+              <div class="search-box" style="margin-bottom:12px;">
+                <i data-lucide="search" class="icon-sm search-icon"></i>
+                <input type="text" id="admin-users-search" class="form-input" placeholder="Search user name or mobile..." oninput="app.debounceAdminSearch('users')">
+              </div>
+              <div class="admin-cards-container" id="admin-users-card-list"></div>
             </div>
 
             <!-- ==========================================

@@ -631,21 +631,28 @@ class Database:
         if not user:
             return None
 
-        # Get wallets (exclude encrypted_private_key)
+        # Read-only admin view: expose only the wallet details needed for
+        # oversight. Never return private keys, encrypted key material, or metadata.
         wallets = await self.get_user_wallets(user_identifier)
-        safe_wallets = []
-        for w in wallets:
-            w_copy = dict(w)
-            w_copy.pop("encrypted_private_key", None)
-            safe_wallets.append(w_copy)
+        safe_wallets = [{
+            "id": w.get("id"),
+            "workspace_id": w.get("workspace_id"),
+            "wallet_name": w.get("wallet_name"),
+            "address": w.get("address"),
+            "wallet_type": w.get("wallet_type"),
+            "created_at": w.get("created_at"),
+            "last_used": w.get("last_used"),
+        } for w in wallets]
 
-        # Get payments
-        payments = await self.get_user_payments(user_identifier, limit=50)
+        workspaces = await self.get_user_workspaces(user_identifier)
+        # Show the complete recorded payment history in the read-only admin view.
+        payments = await self.get_user_payments(user_identifier, limit=None)
 
         total_paid = await self.get_user_total_paid(user_identifier)
         return {
             "user": user,
             "wallets": safe_wallets,
+            "workspaces": workspaces,
             "payments": payments,
             "total_paid": round(total_paid, 2),
         }
@@ -1408,21 +1415,22 @@ class Database:
                 return dict(row) if row else None
 
     async def get_user_payments(
-        self, user_identifier: int, limit: int = 5, offset: int = 0
+        self, user_identifier: int, limit: Optional[int] = 5, offset: int = 0
     ) -> list[dict[str, Any]]:
         """Paginated USAT payments for a specific user."""
         user_ids = await self._resolve_user_identifiers(user_identifier)
         placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
-            async with conn.execute(
-                f"""
+            query = f"""
                 SELECT * FROM usat_payments
                 WHERE user_id IN ({placeholders}) OR telegram_id IN ({placeholders})
                 ORDER BY id DESC
-                LIMIT ? OFFSET ?;
-                """,
-                user_ids + user_ids + [limit, offset],
-            ) as cur:
+            """
+            params: list[Any] = user_ids + user_ids
+            if limit is not None:
+                query += " LIMIT ? OFFSET ?"
+                params.extend([limit, offset])
+            async with conn.execute(query, params) as cur:
                 rows = await cur.fetchall()
                 return [dict(r) for r in rows]
 
@@ -1532,7 +1540,7 @@ class Database:
 
     async def get_all_payments(
         self,
-        limit: int = 20,
+        limit: Optional[int] = 20,
         offset: int = 0,
         search: str = "",
         status_filter: str = "",
@@ -1574,9 +1582,10 @@ class Database:
             LEFT JOIN users u ON (p.user_id = u.id OR p.telegram_id = u.telegram_id)
             {where_clause}
             ORDER BY p.id DESC
-            LIMIT ? OFFSET ?;
+            {"LIMIT ? OFFSET ?" if limit is not None else ""};
         """
-        params.extend([limit, offset])
+        if limit is not None:
+            params.extend([limit, offset])
         async with self.connect() as conn:
             async with conn.execute(query, tuple(params)) as cur:
                 rows = await cur.fetchall()

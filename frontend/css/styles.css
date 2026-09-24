@@ -2089,6 +2089,47 @@ i[data-lucide], svg.lucide {
 
 .payment-stat-copy { overflow: hidden; }
 
+.payment-date-group td {
+  padding: 12px 14px 7px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.payment-date-group-mobile {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.desktop-payments-table-card .table-responsive { max-height: 560px; overflow-y: auto; }
+.mobile-payments-cards-list { max-height: 560px; overflow-y: auto; padding-right: 3px; }
+.admin-cards-container { max-height: 600px; overflow-y: auto; padding-right: 3px; }
+.wallet-history-content { max-height: 480px; overflow-y: auto; padding-right: 3px; }
+
+.admin-user-choice { width: 100%; border: 1px solid var(--border-color); text-align: left; cursor: pointer; background: #fff; }
+.admin-user-choice:hover { border-color: var(--accent-blue); background: var(--accent-blue-subtle); }
+.admin-user-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.admin-user-summary > div { padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-surface); }
+.admin-user-summary span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.admin-user-summary strong { display: block; margin-top: 3px; color: var(--text-primary); font-size: 17px; }
+.admin-user-workspaces { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 3px; }
+.admin-user-workspace { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
+.admin-user-workspace-head { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--bg-surface); color: var(--text-primary); font-size: 13px; }
+.admin-user-workspace-head span { color: var(--text-muted); font-size: 11px; }
+.admin-user-wallet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--border-color); font-size: 12px; }
+.admin-user-wallet-row > span:first-child { min-width: 0; }
+.admin-user-wallet-row strong, .admin-user-wallet-row small { display: block; }
+.admin-user-wallet-row small { margin-top: 2px; color: var(--text-muted); font-family: monospace; }
+.admin-user-wallet-row > span:last-child { color: var(--balance-available-dark); font-weight: 700; text-align: right; white-space: nowrap; }
+.admin-user-wallet-empty { padding: 11px 12px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-color); }
+
 .payments-empty-state {
   min-height: 220px;
   padding: 32px 24px;
