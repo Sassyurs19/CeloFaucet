@@ -481,35 +481,11 @@
 
           </div>
 
-          <!-- Desktop Table View -->
-          <div class="card desktop-payments-table-card" style="padding:0; overflow:hidden;">
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Wallet Name</th>
-                    <th>Status</th>
-                    <th>Amount</th>
-                    <th>From Wallet</th>
-                    <th>Recipient Address</th>
-                    <th>Transaction</th>
-                    <th>Date & Time</th>
-                  </tr>
-                </thead>
-                <tbody id="payments-table-body">
-                  <tr>
-                    <td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">
-                      Loading payments...
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <div id="payments-history-groups" class="payments-history-groups">
+            <div class="payments-empty-state">
+              <div class="payments-empty-icon"><i data-lucide="receipt-text" class="icon-lg"></i></div>
+              <h3>Loading payment history</h3>
             </div>
-          </div>
-
-          <!-- Mobile Cards View (Responsive stream on mobile devices) -->
-          <div id="payments-mobile-cards-container" class="mobile-payments-cards-list" style="display:none; flex-direction:column; gap:10px;">
-            <!-- Loaded dynamically in app.js -->
           </div>
         </section>
 

@@ -2089,27 +2089,13 @@ i[data-lucide], svg.lucide {
 
 .payment-stat-copy { overflow: hidden; }
 
-.payment-date-group td {
-  padding: 12px 14px 7px;
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.payment-date-group-mobile {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.desktop-payments-table-card .table-responsive { max-height: 560px; overflow-y: auto; }
-.mobile-payments-cards-list { max-height: 560px; overflow-y: auto; padding-right: 3px; }
+.payments-history-groups { max-height: 620px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 24px; }
+.payment-day-section { min-width: 0; }
+.payment-day-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 2px 9px; }
+.payment-day-heading h2 { margin: 0; color: var(--text-primary); font-size: 19px; line-height: 1.2; font-weight: 800; letter-spacing: -0.02em; }
+.payment-day-heading span { color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.payment-day-card .table-responsive { max-height: 380px; overflow-y: auto; }
+.payment-day-mobile-list { max-height: 380px; overflow-y: auto; padding-right: 3px; }
 .admin-cards-container { max-height: 600px; overflow-y: auto; padding-right: 3px; }
 .wallet-history-content { max-height: 480px; overflow-y: auto; padding-right: 3px; }
 

@@ -2373,11 +2373,10 @@ const app = (function () {
   // --- Payments History View ---
 
   async function loadPaymentsHistory() {
-    const tbody = document.getElementById('payments-table-body');
-    const mobileContainer = document.getElementById('payments-mobile-cards-container');
+    const historyContainer = document.getElementById('payments-history-groups');
     const refreshBtn = document.getElementById('btn-payments-refresh');
     if (refreshBtn) refreshBtn.classList.add('is-spinning');
-    if (!tbody) {
+    if (!historyContainer) {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
       return;
     }
@@ -2401,31 +2400,35 @@ const app = (function () {
       setBalanceTone(compEl, completedCount);
 
       if (payments.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="8" style="text-align:center; padding:32px; color:var(--text-muted);">
-              No payment transactions recorded yet.
-            </td>
-          </tr>
+        historyContainer.innerHTML = `
+          <div class="payments-empty-state">
+            <div class="payments-empty-icon"><i data-lucide="receipt-text" class="icon-lg"></i></div>
+            <h3>No payments yet</h3>
+            <p>Completed payments and receipts will appear here.</p>
+          </div>
         `;
-        if (mobileContainer) {
-          mobileContainer.innerHTML = `
-            <div class="payments-empty-state">
-              <div class="payments-empty-icon"><i data-lucide="receipt-text" class="icon-lg"></i></div>
-              <h3>No payments yet</h3>
-              <p>Completed payments and receipts will appear here.</p>
-            </div>
-          `;
-          renderIcons();
-        }
+        renderIcons();
         return;
       }
 
-      let tableHtml = '';
-      let mobileHtml = '';
-      let currentDateGroup = '';
-
+      const paymentGroups = [];
+      const groupsByDate = new Map();
       payments.forEach((p) => {
+        const dateGroup = paymentDateLabel(p.created_at);
+        let group = groupsByDate.get(dateGroup);
+        if (!group) {
+          group = { label: dateGroup, payments: [] };
+          groupsByDate.set(dateGroup, group);
+          paymentGroups.push(group);
+        }
+        group.payments.push(p);
+      });
+
+      historyContainer.innerHTML = paymentGroups.map((group) => {
+        let tableHtml = '';
+        let mobileHtml = '';
+
+        group.payments.forEach((p) => {
         const amtStr = parseFloat(p.amount || 0).toFixed(2);
         const pStatus = (p.status || '').toUpperCase();
         const hasTxHash = Boolean(p.tx_hash);
@@ -2456,13 +2459,7 @@ const app = (function () {
              </a>`
           : '<span style="color:var(--text-muted);">-</span>';
 
-        const dateStr = p.created_at ? new Date(p.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-        const dateGroup = paymentDateLabel(p.created_at);
-        if (dateGroup !== currentDateGroup) {
-          currentDateGroup = dateGroup;
-          tableHtml += `<tr class="payment-date-group"><td colspan="7">${escapeHtml(dateGroup)}</td></tr>`;
-          mobileHtml += `<div class="payment-date-group-mobile">${escapeHtml(dateGroup)}</div>`;
-        }
+        const timeStr = p.created_at ? new Date(p.created_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '-';
 
         // Desktop Table Row
         tableHtml += `
@@ -2473,7 +2470,7 @@ const app = (function () {
             <td><span class="code-address">${formatShortAddress(p.from_address)}</span></td>
             <td><span class="code-address">${formatShortAddress(p.to_address)}</span></td>
             <td>${txLink}</td>
-            <td style="font-size:12px; color:var(--text-muted);">${dateStr}</td>
+            <td style="font-size:12px; color:var(--text-muted);">${timeStr}</td>
           </tr>
         `;
 
@@ -2498,8 +2495,8 @@ const app = (function () {
               </span>
             </div>
             <div class="pmc-row">
-              <span class="pmc-label">Date:</span>
-              <span style="font-size:11px; color:var(--text-muted);">${dateStr}</span>
+              <span class="pmc-label">Time:</span>
+              <span style="font-size:11px; color:var(--text-muted);">${timeStr}</span>
             </div>
             ${p.tx_hash ? `
             <div class="pmc-footer">
@@ -2513,12 +2510,38 @@ const app = (function () {
             </div>` : ''}
           </div>
         `;
-      });
+        });
 
-      tbody.innerHTML = tableHtml;
-      if (mobileContainer) {
-        mobileContainer.innerHTML = mobileHtml;
-      }
+        const paymentCountLabel = group.payments.length === 1 ? '1 payment' : `${group.payments.length} payments`;
+        return `
+          <section class="payment-day-section">
+            <div class="payment-day-heading">
+              <h2>${escapeHtml(group.label)}</h2>
+              <span>${paymentCountLabel}</span>
+            </div>
+            <div class="card desktop-payments-table-card payment-day-card" style="padding:0; overflow:hidden;">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Wallet Name</th>
+                      <th>Status</th>
+                      <th>Amount</th>
+                      <th>From Wallet</th>
+                      <th>Recipient Address</th>
+                      <th>Transaction</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>${tableHtml}</tbody>
+                </table>
+              </div>
+            </div>
+            <div class="mobile-payments-cards-list payment-day-mobile-list">${mobileHtml}</div>
+          </section>
+        `;
+      }).join('');
+
       renderIcons();
     } catch (err) {
       showToast('Failed to load history: ' + err.message, 'error');
