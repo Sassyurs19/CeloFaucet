@@ -2089,13 +2089,11 @@ i[data-lucide], svg.lucide {
 
 .payment-stat-copy { overflow: hidden; }
 
-.payments-history-groups { max-height: 620px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 24px; }
+.payments-history-groups { display: flex; flex-direction: column; gap: 24px; }
 .payment-day-section { min-width: 0; }
 .payment-day-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 2px 9px; }
 .payment-day-heading h2 { margin: 0; color: var(--text-primary); font-size: 19px; line-height: 1.2; font-weight: 800; letter-spacing: -0.02em; }
 .payment-day-heading span { color: var(--text-muted); font-size: 12px; font-weight: 700; }
-.payment-day-card .table-responsive { max-height: 380px; overflow-y: auto; }
-.payment-day-mobile-list { max-height: 380px; overflow-y: auto; padding-right: 3px; }
 .admin-cards-container { max-height: 600px; overflow-y: auto; padding-right: 3px; }
 .wallet-history-content { max-height: 480px; overflow-y: auto; padding-right: 3px; }
 
