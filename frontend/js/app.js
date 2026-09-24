@@ -941,69 +941,6 @@ const app = (function () {
     }
   }
 
-  // --- Direct On-Chain Celo & USAT Balance Querier ---
-  // Queries forno.celo.org directly from the client for 100% real-time accuracy across hosting platforms
-  async function fetchOnChainBalances(address) {
-    if (!address || typeof address !== 'string' || !address.startsWith('0x')) {
-      return { celo: 0, usat: 0 };
-    }
-    try {
-      const rpcUrl = 'https://forno.celo.org';
-      const usatContract = '0xd2ab3c9a02dbbab236bfec45d1d755df4267f771';
-      const cleanAddr = address.trim().toLowerCase();
-      const cleanAddrNo0x = cleanAddr.startsWith('0x') ? cleanAddr.slice(2) : cleanAddr;
-      const paddedAddr = cleanAddrNo0x.padStart(64, '0');
-
-      const celoReq = fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_getBalance',
-          params: [cleanAddr, 'latest'],
-        }),
-      }).then((r) => r.json()).catch(() => null);
-
-      const usatReq = fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'eth_call',
-          params: [
-            {
-              to: usatContract,
-              data: '0x70a08231' + paddedAddr,
-            },
-            'latest',
-          ],
-        }),
-      }).then((r) => r.json()).catch(() => null);
-
-      const [celoRes, usatRes] = await Promise.all([celoReq, usatReq]);
-
-      let celoBal = 0;
-      if (celoRes && celoRes.result) {
-        celoBal = parseInt(celoRes.result, 16) / 1e18;
-      }
-
-      let usatBal = 0;
-      if (usatRes && usatRes.result && usatRes.result !== '0x') {
-        usatBal = parseInt(usatRes.result, 16) / 1e6; // USAT 6 decimals
-      }
-
-      return {
-        celo: isNaN(celoBal) ? 0 : celoBal,
-        usat: isNaN(usatBal) ? 0 : usatBal,
-      };
-    } catch (e) {
-      console.warn('On-chain balance query error:', e);
-      return { celo: 0, usat: 0 };
-    }
-  }
-
   async function loadWallets() {
     try {
       await loadWorkspaces();
@@ -1024,25 +961,26 @@ const app = (function () {
       renderWalletsList();
       renderIcons();
 
-      // Enrich all wallets with live on-chain balances directly from Celo Mainnet RPC
-      Promise.all(
-        wallets.map(async (w) => {
-          if (w.address) {
-            const onChain = await fetchOnChainBalances(w.address);
-            w.celo_balance = onChain.celo.toFixed(4);
-            w.usat_balance = onChain.usat.toFixed(2);
-          }
-        })
-      ).then(() => {
-        updateWalletBalanceDisplays();
-        renderWalletsSelect();
-        renderWalletsList();
-        renderIcons();
-      }).catch((chainErr) => {
-        console.warn('Direct on-chain balance query warning:', chainErr);
-      });
+      // Balances come from the server-side Celo client. This avoids treating a
+      // browser RPC/CORS failure as a zero balance and keeps all workspaces in sync.
+      updateWalletBalanceDisplays();
+      return true;
     } catch (err) {
       showToast('Failed to load wallets: ' + err.message, 'error');
+      return false;
+    }
+  }
+
+  async function refreshAllWalletBalances() {
+    const button = document.getElementById('btn-wallets-refresh');
+    if (button) button.classList.add('is-spinning');
+    try {
+      const refreshed = await loadWallets();
+      if (refreshed) showToast('Workspace balances refreshed.', 'success');
+    } catch (err) {
+      showToast('Unable to refresh blockchain balances. Please try again shortly.', 'error');
+    } finally {
+      if (button) button.classList.remove('is-spinning');
     }
   }
 
@@ -1586,15 +1524,8 @@ const app = (function () {
     let selectedId = select && select.value ? parseInt(select.value, 10) : state.selectedWalletId;
     let wallet = state.wallets.find((w) => String(w.id) === String(selectedId || state.selectedWalletId));
 
-    if (!wallet && state.wallets.length > 0) {
-      wallet = state.wallets[0];
-      state.selectedWalletId = wallet.id;
-      if (select) select.value = wallet.id;
-    }
-
     if (!wallet) {
-      showToast('No sending wallet found. Please add or connect a wallet first.', 'warning');
-      openAddWalletModal();
+      showToast('Choose a workspace and a sending wallet before continuing.', 'warning');
       return;
     }
 
@@ -2961,18 +2892,7 @@ const app = (function () {
       const balEl = document.getElementById('admin-funding-balance');
       const givenEl = document.getElementById('admin-funding-given');
 
-      let liveCelo = funding ? parseFloat(funding.celo_balance || funding.balance_celo) : NaN;
-      const fundingAddr = funding?.funding_address || funding?.funding_wallet;
-      if (fundingAddr) {
-        try {
-          const onChain = await fetchOnChainBalances(fundingAddr);
-          if (onChain.celo > 0) {
-            liveCelo = onChain.celo;
-          }
-        } catch (e) {
-          // The server-provided balance remains the fallback when available.
-        }
-      }
+      const liveCelo = funding ? parseFloat(funding.celo_balance || funding.balance_celo) : NaN;
 
       if (balEl) balEl.textContent = Number.isFinite(liveCelo) ? `${liveCelo.toFixed(4)} CELO` : 'Unavailable';
       if (givenEl && funding) {
@@ -3240,6 +3160,7 @@ const app = (function () {
     openRenameWalletModal,
     submitRenameWallet,
     loadWallets,
+    refreshAllWalletBalances,
     openModal,
     closeModal,
     setAmountPercent,

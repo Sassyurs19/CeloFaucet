@@ -250,7 +250,7 @@
             <div class="pay-capsule" id="dash-from-wallet-capsule">
               <div class="pay-capsule-header">
                 <span class="pay-capsule-label">
-                  <i data-lucide="wallet" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <i data-lucide="wallet" class="icon-xs" style="color:var(--balance-available);"></i>
                   <span>From Wallet</span>
                 </span>
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -282,7 +282,7 @@
                         <i data-lucide="copy" class="icon-xs"></i>
                       </button>
                       <span style="color:var(--text-muted); font-size:11px;">•</span>
-                      <span class="wallet-trigger-gas" id="trigger-wallet-gas" style="display:inline-flex; align-items:center; gap:3px; color:var(--celo-green-dark); font-weight:600; font-size:12px;">
+                      <span class="wallet-trigger-gas" id="trigger-wallet-gas" style="display:inline-flex; align-items:center; gap:3px; color:var(--balance-available-dark); font-weight:600; font-size:12px;">
                         <i data-lucide="fuel" class="icon-xs"></i>
                         <span id="trigger-wallet-gas-text">0.0000 CELO Gas</span>
                       </span>
@@ -316,13 +316,13 @@
             <div class="pay-amount-box">
               <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
                 <span class="pay-capsule-label">
-                  <i data-lucide="coins" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <i data-lucide="coins" class="icon-xs" style="color:var(--balance-available);"></i>
                   <span>Enter Amount</span>
                 </span>
                 <div id="amount-validation-hint" style="font-size:12px; color:var(--text-muted); font-weight:600; display:flex; align-items:center; gap:8px;">
                   <span>Available: <strong id="dash-avail-usdt" style="color:var(--text-primary); font-weight:700;">0.00</strong> USAT</span>
                   <span style="color:var(--border-color);">•</span>
-                  <span>Gas: <strong id="dash-avail-celo" style="color:var(--celo-green-dark); font-weight:700;">0.0000</strong> CELO</span>
+                  <span>Gas: <strong id="dash-avail-celo" style="color:var(--balance-available-dark); font-weight:700;">0.0000</strong> CELO</span>
                 </div>
               </div>
 
@@ -363,7 +363,7 @@
             <div class="pay-capsule" id="dash-to-wallet-capsule">
               <div class="pay-capsule-header">
                 <span class="pay-capsule-label">
-                  <i data-lucide="send" class="icon-xs" style="color:var(--celo-green);"></i>
+                  <i data-lucide="send" class="icon-xs" style="color:var(--balance-available);"></i>
                   <span>To Wallet</span>
                 </span>
                 <div style="display:flex; align-items:center; gap:6px;">
@@ -413,13 +413,17 @@
             <div>
               <div style="display:flex; align-items:baseline; gap:10px;">
                 <h1 style="font-size:22px; font-weight:800; margin:0;">Your Wallets</h1>
-                <span id="wallets-summary-usdt" style="font-size:16px; font-weight:800; color:var(--celo-green-dark);">$0.00</span>
+                <span id="wallets-summary-usdt" style="font-size:16px; font-weight:800; color:var(--balance-zero);">$0.00</span>
               </div>
               <p class="description" style="margin:2px 0 0 0; font-size:12px;">
                 <span id="wallets-summary-count" style="font-weight:700;">0</span> wallets in your workspaces
               </p>
             </div>
             <div class="wallets-header-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-wallets-refresh" onclick="app.refreshAllWalletBalances()" title="Refresh every workspace balance">
+                <i data-lucide="refresh-cw" class="icon-sm"></i>
+                <span>Refresh balances</span>
+              </button>
               <button id="btn-wallet-add" class="btn btn-primary btn-sm" onclick="app.openAddWalletModal()" style="display:none;">
                 <i data-lucide="plus" class="icon-sm"></i>
                 <span>+ Add Wallet</span>
