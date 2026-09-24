@@ -1038,20 +1038,24 @@ const app = (function () {
     if (workspaceList) {
       const activeWorkspace = (state.workspaces || []).find((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
       if (activeWorkspace) {
+        const activeWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(activeWorkspace.id));
+        const activeUsat = activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+        const activeCelo = activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
         workspaceBar?.classList.remove('is-chooser');
         workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
-          <div class="workspace-current"><span>${escapeHtml(activeWorkspace.name)}</span><small>${Number(activeWorkspace.wallet_count || 0)} wallets</small><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
+          <div class="workspace-current"><span class="workspace-current-name"><strong>${escapeHtml(activeWorkspace.name)}</strong><small>${activeWallets.length} ${activeWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-current-balances"><strong>$${activeUsat.toFixed(2)} USAT</strong><small>${activeCelo.toFixed(4)} CELO</small></span><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
         if (addWalletButton) addWalletButton.style.display = 'inline-flex';
       } else {
         workspaceBar?.classList.add('is-chooser');
         workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
           const workspaceWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
-          const balance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+          const usatBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+          const celoBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
           return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
-            <i data-lucide="wallet" class="icon-sm"></i><span>${escapeHtml(workspace.name)}</span><strong class="${balance > 0 ? 'balance-positive' : 'balance-zero'}">$${balance.toFixed(2)}</strong><small>${Number(workspace.wallet_count || 0)} wallets · Enter</small>
+            <i data-lucide="wallet" class="icon-sm"></i><span class="workspace-choice-name">${escapeHtml(workspace.name)}<small>${workspaceWallets.length} ${workspaceWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-choice-balances"><strong class="${usatBalance > 0 ? 'balance-positive' : 'balance-zero'}">$${usatBalance.toFixed(2)} USAT</strong><small>${celoBalance.toFixed(4)} CELO</small></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
           </button>`;
         }).join('') + `<button type="button" class="workspace-choice workspace-create-choice" onclick="app.openCreateWorkspaceModal()">
-          <i data-lucide="folder-plus" class="icon-sm"></i><span>New Workspace</span><strong>+</strong><small>Create a separate wallet space</small>
+          <i data-lucide="folder-plus" class="icon-sm"></i><span class="workspace-choice-name">New Workspace<small>Create a separate wallet space</small></span><span class="workspace-choice-balances"><strong>+</strong></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
         </button>`;
         if (addWalletButton) addWalletButton.style.display = 'none';
       }
