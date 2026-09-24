@@ -915,7 +915,7 @@ const app = (function () {
         const dashUser = document.getElementById('dash-user-name');
         if (dashUser) dashUser.textContent = state.user.full_name || state.user.name || 'User';
       }
-      await Promise.all([loadWallets(), loadReceivingWallets(), loadSavedRecipients()]);
+      await Promise.all([loadWallets(), loadReceivingWallets(), loadSavedRecipients(), loadRewardPoolStatus()]);
     } finally {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     }
@@ -927,6 +927,19 @@ const app = (function () {
       state.receivingWallets = data.receiving_wallets || [];
     } catch (err) {
       console.warn('Could not load receiving destinations:', err);
+    }
+  }
+
+  async function loadRewardPoolStatus() {
+    const balance = document.getElementById('dash-reward-pool-balance');
+    if (!balance) return;
+    try {
+      const data = await apiRequest('/api/rewards/status');
+      const amount = Number.parseFloat(data.balance_usat);
+      balance.textContent = Number.isFinite(amount) ? amount.toFixed(2) : 'Unavailable';
+    } catch (err) {
+      // Never turn an RPC failure into a false zero balance.
+      balance.textContent = 'Unavailable';
     }
   }
 
@@ -2834,15 +2847,44 @@ const app = (function () {
       if (title) title.textContent = user.full_name || 'User Details';
       const workspaceCards = workspaces.map((workspace) => {
         const members = wallets.filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
-        return `<div class="admin-user-workspace"><div class="admin-user-workspace-head"><strong>${escapeHtml(workspace.name)}</strong><span>${members.length} wallets</span></div>${members.length ? members.map((wallet) => `<div class="admin-user-wallet-row"><span><strong>${escapeHtml(wallet.wallet_name || 'Wallet')}</strong><small>${escapeHtml(formatShortAddress(wallet.address))}</small></span><span>${wallet.usat_balance === null || wallet.usat_balance === undefined ? 'Balance unavailable' : `$${escapeHtml(wallet.usat_balance)} USDT`}</span></div>`).join('') : '<div class="admin-user-wallet-empty">No wallets in this workspace.</div>'}</div>`;
+        const workspaceId = Number(workspace.id);
+        const walletRows = members.length
+          ? members.map((wallet) => `<div class="admin-user-wallet-row"><span><strong>${escapeHtml(wallet.wallet_name || 'Wallet')}</strong><small>${escapeHtml(wallet.address || '')}</small></span><span>${wallet.usat_balance === null || wallet.usat_balance === undefined ? 'Balance unavailable' : `$${escapeHtml(wallet.usat_balance)} USDT`}</span></div>`).join('')
+          : '<div class="admin-user-wallet-empty">No wallets in this workspace.</div>';
+        return `<div class="admin-user-workspace"><button type="button" class="admin-user-workspace-head" onclick="app.toggleAdminWorkspace(${workspaceId})" aria-expanded="false" aria-controls="admin-workspace-wallets-${workspaceId}"><span><strong>${escapeHtml(workspace.name)}</strong><small>${members.length} ${members.length === 1 ? 'wallet' : 'wallets'}</small></span><i data-lucide="chevron-down" class="icon-sm"></i></button><div id="admin-workspace-wallets-${workspaceId}" class="admin-user-workspace-wallets" hidden>${walletRows}</div></div>`;
       }).join('') || '<div class="admin-user-wallet-empty">No workspaces found.</div>';
       if (content) content.innerHTML = `
         <div class="admin-user-summary"><div><span>Workspaces</span><strong>${Number(data.workspace_count || workspaces.length)}</strong></div><div><span>Wallets</span><strong>${wallets.length}</strong></div><div><span>Payments</span><strong>${(data.payments || []).length}</strong></div></div>
-        <p class="description" style="margin:0 0 12px;">Read-only wallet view. No transfers or private keys are available here.</p>
-        <div class="admin-user-workspaces">${workspaceCards}</div>`;
+        <p class="description" style="margin:0 0 12px;">Choose a workspace to view every wallet. This view never exposes private keys.</p>
+        <div class="admin-user-workspaces">${workspaceCards}</div>
+        <div class="admin-user-actions"><button type="button" class="btn btn-danger btn-sm" onclick="app.deleteAdminUser(${Number(user.id)})"><i data-lucide="trash-2" class="icon-sm"></i><span>Delete User</span></button></div>`;
       renderIcons();
     } catch (err) {
       if (content) content.innerHTML = `<div style="padding:20px; color:var(--danger); text-align:center;">Unable to load this user: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function toggleAdminWorkspace(workspaceId) {
+    const details = document.getElementById(`admin-workspace-wallets-${workspaceId}`);
+    const button = details?.previousElementSibling;
+    if (!details || !button) return;
+    const isExpanded = !details.hidden;
+    details.hidden = isExpanded;
+    button.setAttribute('aria-expanded', String(!isExpanded));
+    button.classList.toggle('is-open', !isExpanded);
+  }
+
+  async function deleteAdminUser(userId) {
+    if (!Number.isInteger(Number(userId))) return;
+    const confirmed = window.confirm('Delete this user permanently? Their workspaces, wallets, saved recipients, sessions, and payment records will be removed. This cannot be undone.');
+    if (!confirmed) return;
+    try {
+      await apiRequest(`/api/admin/users/${Number(userId)}`, { method: 'DELETE' });
+      closeModal('modal-admin-user-details');
+      showToast('User account deleted.', 'success');
+      await Promise.all([loadAdminUsers(), loadAdminOverview()]);
+    } catch (err) {
+      showToast(err.message || 'Unable to delete this user.', 'error');
     }
   }
 
@@ -3236,6 +3278,8 @@ const app = (function () {
     loadProfile,
     loadAdminView,
     openAdminUserDetails,
+    toggleAdminWorkspace,
+    deleteAdminUser,
     handleAdminLogin,
     handleAdminTogglePause,
     adminResetAllData,

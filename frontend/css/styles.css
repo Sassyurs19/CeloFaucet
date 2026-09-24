@@ -1405,6 +1405,14 @@ i[data-lucide], svg.lucide {
 }
 
 /* --- Premium Centered Circular/Rounded Transfer Box Styles --- */
+.reward-pool-card { max-width: 480px; margin: 0 auto 16px; padding: 15px 17px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid rgba(16, 185, 129, 0.22); border-radius: 18px; background: linear-gradient(120deg, rgba(236, 253, 245, 0.94), #ffffff); box-shadow: 0 10px 26px -22px rgba(5, 150, 105, 0.42); }
+.reward-pool-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.reward-pool-status { display: inline-flex; align-items: center; gap: 5px; color: var(--balance-available-dark); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.reward-pool-status i { color: var(--celo-green); }
+.reward-pool-label { color: var(--text-secondary); font-size: 13px; font-weight: 650; }
+.reward-pool-balance { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; text-align: right; white-space: nowrap; }
+.reward-pool-balance strong { color: var(--text-primary); font-size: 23px; line-height: 1; font-weight: 800; letter-spacing: -0.04em; }
+.reward-pool-balance span { color: var(--text-muted); font-size: 11px; font-weight: 800; }
 .pay-card-premium {
   max-width: 480px;
   margin: 0 auto;
@@ -2103,16 +2111,25 @@ i[data-lucide], svg.lucide {
 .admin-user-summary > div { padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-surface); }
 .admin-user-summary span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .admin-user-summary strong { display: block; margin-top: 3px; color: var(--text-primary); font-size: 17px; }
-.admin-user-workspaces { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 3px; }
+.admin-user-workspaces { display: flex; flex-direction: column; gap: 10px; }
 .admin-user-workspace { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
-.admin-user-workspace-head { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--bg-surface); color: var(--text-primary); font-size: 13px; }
-.admin-user-workspace-head span { color: var(--text-muted); font-size: 11px; }
+.admin-user-workspace-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 0; background: var(--bg-surface); color: var(--text-primary); text-align: left; font-size: 13px; cursor: pointer; }
+.admin-user-workspace-head:hover { background: var(--bg-subtle); }
+.admin-user-workspace-head > span { display: flex; flex-direction: column; gap: 3px; }
+.admin-user-workspace-head small { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.admin-user-workspace-head i { color: var(--text-muted); transition: transform .2s ease; }
+.admin-user-workspace-head.is-open i { transform: rotate(180deg); }
+.admin-user-workspace-wallets { border-top: 1px solid var(--border-color); }
 .admin-user-wallet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--border-color); font-size: 12px; }
+.admin-user-workspace-wallets > .admin-user-wallet-row:first-child { border-top: 0; }
 .admin-user-wallet-row > span:first-child { min-width: 0; }
 .admin-user-wallet-row strong, .admin-user-wallet-row small { display: block; }
-.admin-user-wallet-row small { margin-top: 2px; color: var(--text-muted); font-family: monospace; }
+.admin-user-wallet-row small { margin-top: 2px; color: var(--text-muted); font-family: monospace; overflow-wrap: anywhere; }
 .admin-user-wallet-row > span:last-child { color: var(--balance-available-dark); font-weight: 700; text-align: right; white-space: nowrap; }
 .admin-user-wallet-empty { padding: 11px 12px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-color); }
+.admin-user-workspace-wallets > .admin-user-wallet-empty { border-top: 0; }
+.admin-user-actions { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-color); }
+.admin-user-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
 
 .payments-empty-state {
   min-height: 220px;
@@ -2568,6 +2585,9 @@ button.is-spinning > i {
     padding: 18px 14px;
     border-radius: 20px;
   }
+
+  .reward-pool-card { padding: 13px 14px; border-radius: 16px; }
+  .reward-pool-balance strong { font-size: 20px; }
 
   .pay-capsule {
     padding: 12px 14px;

@@ -657,6 +657,31 @@ class Database:
             "total_paid": round(total_paid, 2),
         }
 
+    async def delete_user_account_admin(self, user_id: int) -> bool:
+        """Permanently remove a non-admin user and their owned application records.
+
+        Related rows are removed in dependency order within one database
+        transaction so PostgreSQL foreign-key constraints cannot leave a partial
+        account behind.
+        """
+        user = await self.get_user_by_id(user_id)
+        if not user:
+            return False
+        if is_admin_phone(user.get("mobile_number")):
+            raise ValueError("The administrator account cannot be deleted.")
+
+        telegram_id = user.get("telegram_id")
+        async with self.connect() as conn:
+            await conn.execute("DELETE FROM sessions WHERE user_id = ?;", (user_id,))
+            await conn.execute("DELETE FROM saved_recipients WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
+            await conn.execute("DELETE FROM usat_payments WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
+            await conn.execute("DELETE FROM claims WHERE telegram_id = ?;", (telegram_id,))
+            await conn.execute("DELETE FROM user_wallets WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
+            await conn.execute("DELETE FROM wallet_workspaces WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
+            cur = await conn.execute("DELETE FROM users WHERE id = ?;", (user_id,))
+            await conn.commit()
+            return cur.rowcount > 0
+
     async def reset_all_users_and_wallets(self) -> dict[str, Any]:
         """Completely wipe all user accounts, user_wallets, payments, and claims to start fresh."""
         async with self.connect() as conn:

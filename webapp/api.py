@@ -600,6 +600,24 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     })
 
 
+async def api_get_reward_pool_status(request: web.Request) -> web.Response:
+    """Return the live public USAT reward-pool balance for the signed-in dashboard."""
+    if not get_user_id_from_request(request):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    if not await celo_client.is_connected():
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
+
+    try:
+        _, balance = await celo_client.get_usat_balance(config.reward_pool_address)
+        return web.json_response({"rewards_live": True, "balance_usat": f"{float(balance):.2f}"})
+    except BlockchainUnavailableError:
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
+    except Exception:
+        logger.exception("Unable to retrieve the public reward-pool balance.")
+        return web.json_response({"error": "Reward balance is temporarily unavailable."}, status=503)
+
+
 async def api_connect_wallet(request: web.Request) -> web.Response:
     """Connect a non-custodial in-browser wallet."""
     user_id = get_user_id_from_request(request)
@@ -1710,6 +1728,31 @@ async def api_admin_get_user_details(request: web.Request) -> web.Response:
     })
 
 
+async def api_admin_delete_user(request: web.Request) -> web.Response:
+    """Permanently delete a selected non-admin account and its owned records."""
+    if not is_admin_request(request):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        user_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "Invalid user ID."}, status=400)
+
+    try:
+        deleted = await db.delete_user_account_admin(user_id)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=403)
+    except Exception:
+        logger.exception("Admin user deletion failed for user_id=%s", user_id)
+        return web.json_response({"error": "Unable to delete this user. Please try again later."}, status=500)
+
+    if not deleted:
+        return web.json_response({"error": "User not found."}, status=404)
+
+    logger.info("Administrator deleted user account id=%s", user_id)
+    return web.json_response({"success": True, "message": "User account deleted."})
+
+
 async def api_admin_get_wallets(request: web.Request) -> web.Response:
     """Paginated list of all wallets across platform with USDT and CELO balances."""
     if not is_admin_request(request):
@@ -1974,6 +2017,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/workspaces", api_create_workspace)
     app.router.add_patch("/api/workspaces/{id}", api_rename_workspace)
     app.router.add_get("/api/wallets", api_get_wallets)
+    app.router.add_get("/api/rewards/status", api_get_reward_pool_status)
     app.router.add_post("/api/wallets/connect", api_connect_wallet)
     app.router.add_post("/api/wallets/import", api_import_wallet)
     app.router.add_get("/api/wallets/{id}/payments", api_get_wallet_payment_history)
@@ -2001,6 +2045,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/dashboard", api_admin_dashboard)
     app.router.add_get("/api/admin/users", api_admin_get_users)
     app.router.add_get("/api/admin/users/{id}", api_admin_get_user_details)
+    app.router.add_delete("/api/admin/users/{id}", api_admin_delete_user)
     app.router.add_get("/api/admin/wallets", api_admin_get_wallets)
     app.router.add_get("/api/admin/receiving-wallets", api_admin_get_receiving_wallets)
     app.router.add_post("/api/admin/receiving-wallets", api_admin_add_receiving_wallet)

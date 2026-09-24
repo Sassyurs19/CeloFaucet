@@ -34,6 +34,8 @@ class Config:
     # USAT Token settings
     usat_contract_address: str = "0xd2ab3c9a02dbbab236bfec45d1d755df4267f771"
     usat_payment_amount: float = 2.00
+    # Public USAT distribution balance shown read-only on the user dashboard.
+    reward_pool_address: str = "0x6fc8bdcad9d4c36fffcf101b633df7b078a221fe"
     
     # Dedicated Gas Funding Wallet credentials (formerly faucet wallet)
     funding_wallet_private_key: str = ""
@@ -95,6 +97,9 @@ class Config:
         network_name = os.getenv("NETWORK_NAME", "Celo Mainnet").strip()
         usat_contract = os.getenv(
             "USAT_CONTRACT_ADDRESS", "0xd2ab3c9a02dbbab236bfec45d1d755df4267f771"
+        ).strip()
+        reward_pool_address = os.getenv(
+            "REWARD_POOL_ADDRESS", "0x6fc8bdcad9d4c36fffcf101b633df7b078a221fe"
         ).strip()
         
         try:
@@ -165,6 +170,7 @@ class Config:
             network_name=network_name,
             usat_contract_address=usat_contract,
             usat_payment_amount=usat_payment_amount,
+            reward_pool_address=reward_pool_address,
             funding_wallet_private_key=private_key,
             funding_wallet_address=funding_address,
             claim_amount=funding_amt,
