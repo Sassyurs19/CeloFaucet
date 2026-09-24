@@ -362,6 +362,44 @@ class Database:
                 );"""
             )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expiration ON sessions(expires_at);")
+            await conn.execute(
+                """CREATE TABLE IF NOT EXISTS celo_recoveries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recovery_id TEXT NOT NULL UNIQUE,
+                    batch_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    workspace_id INTEGER NOT NULL,
+                    wallet_id INTEGER NOT NULL,
+                    from_address TEXT NOT NULL,
+                    to_address TEXT NOT NULL,
+                    balance_before_wei TEXT NOT NULL,
+                    fee_reserve_wei TEXT NOT NULL,
+                    recovered_wei TEXT NOT NULL,
+                    fee_paid_wei TEXT,
+                    status TEXT NOT NULL,
+                    tx_hash TEXT UNIQUE,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );"""
+            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_celo_recoveries_wallet_status ON celo_recoveries(wallet_id, status);")
+            await conn.execute(
+                """CREATE TABLE IF NOT EXISTS celo_recovery_batches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_id TEXT NOT NULL UNIQUE,
+                    user_id INTEGER NOT NULL,
+                    workspace_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    total_wallets INTEGER NOT NULL DEFAULT 0,
+                    eligible_wallets INTEGER NOT NULL DEFAULT 0,
+                    processed_wallets INTEGER NOT NULL DEFAULT 0,
+                    recovered_wei TEXT NOT NULL DEFAULT '0',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );"""
+            )
+            await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_celo_recovery_active_workspace ON celo_recovery_batches(workspace_id) WHERE status = 'PROCESSING';")
 
             await conn.commit()
 
@@ -389,6 +427,10 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_payments_status ON usat_payments(status)",
             "CREATE INDEX IF NOT EXISTS idx_payments_tx_hash ON usat_payments(tx_hash)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_expiration ON sessions(expires_at)",
+            """CREATE TABLE IF NOT EXISTS celo_recoveries (id BIGSERIAL PRIMARY KEY, recovery_id TEXT NOT NULL UNIQUE, batch_id TEXT NOT NULL, user_id BIGINT NOT NULL REFERENCES users(id), workspace_id BIGINT NOT NULL REFERENCES wallet_workspaces(id), wallet_id BIGINT NOT NULL REFERENCES user_wallets(id), from_address TEXT NOT NULL, to_address TEXT NOT NULL, balance_before_wei NUMERIC(78,0) NOT NULL, fee_reserve_wei NUMERIC(78,0) NOT NULL, recovered_wei NUMERIC(78,0) NOT NULL, fee_paid_wei NUMERIC(78,0), status TEXT NOT NULL, tx_hash TEXT UNIQUE, error_message TEXT, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            "CREATE INDEX IF NOT EXISTS idx_celo_recoveries_wallet_status ON celo_recoveries(wallet_id, status)",
+            """CREATE TABLE IF NOT EXISTS celo_recovery_batches (id BIGSERIAL PRIMARY KEY, batch_id TEXT NOT NULL UNIQUE, user_id BIGINT NOT NULL REFERENCES users(id), workspace_id BIGINT NOT NULL REFERENCES wallet_workspaces(id), status TEXT NOT NULL, total_wallets INTEGER NOT NULL DEFAULT 0, eligible_wallets INTEGER NOT NULL DEFAULT 0, processed_wallets INTEGER NOT NULL DEFAULT 0, recovered_wei NUMERIC(78,0) NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_celo_recovery_active_workspace ON celo_recovery_batches(workspace_id) WHERE status = 'PROCESSING'",
         ]
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -676,6 +718,8 @@ class Database:
             await conn.execute("DELETE FROM saved_recipients WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
             await conn.execute("DELETE FROM usat_payments WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
             await conn.execute("DELETE FROM claims WHERE telegram_id = ?;", (telegram_id,))
+            await conn.execute("DELETE FROM celo_recoveries WHERE user_id = ?;", (user_id,))
+            await conn.execute("DELETE FROM celo_recovery_batches WHERE user_id = ?;", (user_id,))
             await conn.execute("DELETE FROM user_wallets WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
             await conn.execute("DELETE FROM wallet_workspaces WHERE user_id = ? OR telegram_id = ?;", (user_id, telegram_id))
             cur = await conn.execute("DELETE FROM users WHERE id = ?;", (user_id,))
@@ -919,6 +963,66 @@ class Database:
                 row = await cur.fetchone()
                 return dict(row) if row else None
 
+    # --- CELO workspace recovery audit trail ---
+
+    async def create_celo_recovery_batch(self, batch_id: str, user_id: int, workspace_id: int, total_wallets: int) -> None:
+        async with self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO celo_recovery_batches (batch_id, user_id, workspace_id, status, total_wallets)
+                   VALUES (?, ?, ?, 'PROCESSING', ?);""",
+                (batch_id, user_id, workspace_id, total_wallets),
+            )
+            await conn.commit()
+
+    async def get_celo_recovery_batch(self, batch_id: str, user_id: int) -> Optional[dict[str, Any]]:
+        async with self.connect() as conn:
+            async with conn.execute(
+                "SELECT * FROM celo_recovery_batches WHERE batch_id = ? AND user_id = ?;", (batch_id, user_id)
+            ) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
+    async def update_celo_recovery_batch(self, batch_id: str, *, status: str | None = None, eligible_wallets: int | None = None, processed_wallets: int | None = None, recovered_wei: int | None = None) -> None:
+        assignments: list[str] = ["updated_at = CURRENT_TIMESTAMP"]
+        values: list[Any] = []
+        for column, value in (("status", status), ("eligible_wallets", eligible_wallets), ("processed_wallets", processed_wallets), ("recovered_wei", str(recovered_wei) if recovered_wei is not None else None)):
+            if value is not None:
+                assignments.append(f"{column} = ?")
+                values.append(value)
+        values.append(batch_id)
+        async with self.connect() as conn:
+            await conn.execute(f"UPDATE celo_recovery_batches SET {', '.join(assignments)} WHERE batch_id = ?;", tuple(values))
+            await conn.commit()
+
+    async def create_celo_recovery(self, recovery_id: str, batch_id: str, user_id: int, workspace_id: int, wallet_id: int, from_address: str, to_address: str, balance_before_wei: int, fee_reserve_wei: int, recovered_wei: int) -> None:
+        async with self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO celo_recoveries (recovery_id, batch_id, user_id, workspace_id, wallet_id, from_address, to_address, balance_before_wei, fee_reserve_wei, recovered_wei, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROCESSING');""",
+                (recovery_id, batch_id, user_id, workspace_id, wallet_id, from_address, to_address, str(balance_before_wei), str(fee_reserve_wei), str(recovered_wei)),
+            )
+            await conn.commit()
+
+    async def update_celo_recovery(self, recovery_id: str, status: str, tx_hash: str | None = None, fee_paid_wei: int | None = None, error_message: str | None = None, recovered_wei: int | None = None) -> None:
+        async with self.connect() as conn:
+            await conn.execute(
+                """UPDATE celo_recoveries SET status = ?, tx_hash = ?, fee_paid_wei = ?, error_message = ?, recovered_wei = COALESCE(?, recovered_wei), updated_at = CURRENT_TIMESTAMP
+                   WHERE recovery_id = ?;""",
+                (status, tx_hash, str(fee_paid_wei) if fee_paid_wei is not None else None, error_message, str(recovered_wei) if recovered_wei is not None else None, recovery_id),
+            )
+            await conn.commit()
+
+    async def get_celo_recoveries(self, batch_id: str, user_id: int) -> list[dict[str, Any]]:
+        async with self.connect() as conn:
+            async with conn.execute(
+                """SELECT r.*, w.wallet_name FROM celo_recoveries r
+                   JOIN celo_recovery_batches b ON b.batch_id = r.batch_id
+                   JOIN user_wallets w ON w.id = r.wallet_id
+                   WHERE r.batch_id = ? AND b.user_id = ? ORDER BY r.created_at ASC;""",
+                (batch_id, user_id),
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+
     async def get_wallet_by_id_admin(self, wallet_id: int) -> Optional[dict[str, Any]]:
         """Retrieve any wallet by ID for admin."""
         async with self.connect() as conn:
@@ -1065,6 +1169,7 @@ class Database:
     async def delete_user_wallet(self, wallet_id: int, user_identifier: int) -> None:
         """Delete wallet owned by user."""
         async with self.connect() as conn:
+            await conn.execute("DELETE FROM celo_recoveries WHERE wallet_id = ?;", (wallet_id,))
             await conn.execute(
                 "DELETE FROM user_wallets WHERE id = ? AND (user_id = ? OR telegram_id = ?);",
                 (wallet_id, user_identifier, user_identifier),
@@ -1074,6 +1179,7 @@ class Database:
     async def delete_wallet_admin(self, wallet_id: int) -> None:
         """Delete wallet by admin."""
         async with self.connect() as conn:
+            await conn.execute("DELETE FROM celo_recoveries WHERE wallet_id = ?;", (wallet_id,))
             await conn.execute("DELETE FROM user_wallets WHERE id = ?;", (wallet_id,))
             await conn.commit()
 
@@ -1991,8 +2097,11 @@ class Database:
     async def reset_all_users_and_wallets(self) -> dict[str, Any]:
         """Admin reset: wipe all users, connected/imported wallets, claims, and payment records for a clean slate."""
         async with self.connect() as conn:
+            await conn.execute("DELETE FROM celo_recoveries;")
+            await conn.execute("DELETE FROM celo_recovery_batches;")
             await conn.execute("DELETE FROM usat_payments;")
             await conn.execute("DELETE FROM user_wallets;")
+            await conn.execute("DELETE FROM wallet_workspaces;")
             await conn.execute("DELETE FROM claims;")
             await conn.execute("DELETE FROM sessions;")
             await conn.execute("DELETE FROM users;")

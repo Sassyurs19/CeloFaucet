@@ -2130,6 +2130,20 @@ i[data-lucide], svg.lucide {
 .admin-user-workspace-wallets > .admin-user-wallet-empty { border-top: 0; }
 .admin-user-actions { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-color); }
 .admin-user-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.workspace-recover-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.celo-recovery-note { display: flex; flex-direction: column; gap: 4px; margin: 14px 0; padding: 12px; border: 1px solid rgba(16, 185, 129, .22); border-radius: var(--radius-md); background: var(--balance-available-subtle); color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+.celo-recovery-note strong { color: var(--text-primary); }
+.celo-recovery-progress-head { display: flex; justify-content: space-between; gap: 10px; margin: 14px 0 7px; font-size: 12px; color: var(--text-secondary); }
+.celo-recovery-progress-head strong { color: var(--text-primary); }
+.celo-recovery-progress-track { height: 8px; overflow: hidden; border-radius: var(--radius-full); background: var(--bg-subtle); }
+.celo-recovery-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--balance-available); transition: width .3s ease; }
+.celo-recovery-results { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.celo-recovery-result { display: flex; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 12px; }
+.celo-recovery-result > span { min-width: 0; }
+.celo-recovery-result strong, .celo-recovery-result small { display: block; }
+.celo-recovery-result small { margin-top: 3px; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.celo-recovery-result-value { text-align: right; color: var(--balance-available-dark); font-weight: 700; }
+.celo-recovery-result-value a { color: var(--accent-blue); font-weight: 600; text-decoration: none; }
 
 .payments-empty-state {
   min-height: 220px;

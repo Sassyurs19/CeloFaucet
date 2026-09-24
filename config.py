@@ -44,6 +44,7 @@ class Config:
     # Distribution & Gas parameters
     claim_amount: float = 0.05  # 0.05 CELO gas subsidy
     celo_funding_amount: float = 0.05
+    celo_recovery_fee_reserve: float = 0.01
     min_gas_reserve: float = 0.02
     min_user_celo_threshold: float = 0.005  # Below this, auto-send 0.05 CELO
     
@@ -175,6 +176,7 @@ class Config:
             funding_wallet_address=funding_address,
             claim_amount=funding_amt,
             celo_funding_amount=funding_amt,
+            celo_recovery_fee_reserve=0.01,
             min_gas_reserve=min_gas,
             min_user_celo_threshold=min_user_celo,
             wallet_encryption_key=enc_key,

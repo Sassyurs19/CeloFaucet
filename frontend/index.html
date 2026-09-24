@@ -927,6 +927,24 @@
     </div>
   </div>
 
+  <div id="modal-celo-recovery" class="modal-overlay">
+    <div class="modal-card" style="max-width:460px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;"><i data-lucide="rotate-ccw" class="icon-sm"></i><span>Recover Workspace CELO</span></h3>
+        <button class="modal-close" onclick="app.closeModal('modal-celo-recovery')">&times;</button>
+      </div>
+      <input id="celo-recovery-workspace-id" type="hidden">
+      <p class="description" style="margin-top:0;">Recover remaining CELO from every imported wallet in <strong id="celo-recovery-workspace-name"></strong>.</p>
+      <div class="celo-recovery-note"><strong>0.01 CELO stays in each wallet</strong><span>It is reserved for that wallet's recovery network fee. Recovery never requests additional CELO funding.</span></div>
+      <div id="celo-recovery-progress" style="display:none;">
+        <div class="celo-recovery-progress-head"><strong>Recovery progress</strong><span id="celo-recovery-progress-label">0 of 0 wallets · 0%</span></div>
+        <div class="celo-recovery-progress-track"><span id="celo-recovery-progress-fill"></span></div>
+      </div>
+      <div id="celo-recovery-results" class="celo-recovery-results"></div>
+      <button id="btn-start-celo-recovery" type="button" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:18px;" onclick="app.startWorkspaceCeloRecovery()"><i data-lucide="rotate-ccw" class="icon-sm"></i><span>Recover CELO</span></button>
+    </div>
+  </div>
+
 
   <!-- =========================================================
        MODAL 1B: PAYMENT CONFIRMATION & DISCLAIMER

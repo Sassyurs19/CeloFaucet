@@ -1040,7 +1040,7 @@ const app = (function () {
       if (activeWorkspace) {
         workspaceBar?.classList.remove('is-chooser');
         workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
-          <div class="workspace-current"><span>${escapeHtml(activeWorkspace.name)}</span><small>${Number(activeWorkspace.wallet_count || 0)} wallets</small><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button></div>`;
+          <div class="workspace-current"><span>${escapeHtml(activeWorkspace.name)}</span><small>${Number(activeWorkspace.wallet_count || 0)} wallets</small><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
         if (addWalletButton) addWalletButton.style.display = 'inline-flex';
       } else {
         workspaceBar?.classList.add('is-chooser');
@@ -1128,6 +1128,78 @@ const app = (function () {
       showToast('Workspace renamed.', 'success');
     } catch (err) {
       showToast(err.message, 'error');
+    }
+  }
+
+  let celoRecoveryPollTimer = null;
+
+  function openCeloRecoveryModal(workspaceId) {
+    const workspace = (state.workspaces || []).find((item) => String(item.id) === String(workspaceId));
+    if (!workspace) return;
+    const name = document.getElementById('celo-recovery-workspace-name');
+    const id = document.getElementById('celo-recovery-workspace-id');
+    const progress = document.getElementById('celo-recovery-progress');
+    const results = document.getElementById('celo-recovery-results');
+    const start = document.getElementById('btn-start-celo-recovery');
+    if (name) name.textContent = workspace.name;
+    if (id) id.value = workspace.id;
+    if (progress) progress.style.display = 'none';
+    if (results) results.innerHTML = '';
+    if (start) { start.disabled = false; start.style.display = 'inline-flex'; }
+    openModal('modal-celo-recovery');
+  }
+
+  async function startWorkspaceCeloRecovery() {
+    const workspaceId = document.getElementById('celo-recovery-workspace-id')?.value;
+    const start = document.getElementById('btn-start-celo-recovery');
+    if (!workspaceId) return;
+    const confirmed = window.confirm('Recover CELO from every imported wallet in this workspace? Each wallet keeps 0.01 CELO for its network fee. This sends real blockchain transactions.');
+    if (!confirmed) return;
+    if (start) start.disabled = true;
+    try {
+      const data = await apiRequest(`/api/workspaces/${workspaceId}/celo-recovery`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      if (start) start.style.display = 'none';
+      showToast('CELO recovery started.', 'success');
+      await pollCeloRecovery(data.batch_id);
+    } catch (err) {
+      if (start) start.disabled = false;
+      showToast(err.message || 'Unable to start CELO recovery.', 'error');
+    }
+  }
+
+  async function pollCeloRecovery(batchId) {
+    if (celoRecoveryPollTimer) clearTimeout(celoRecoveryPollTimer);
+    try {
+      const data = await apiRequest(`/api/celo-recoveries/${encodeURIComponent(batchId)}`);
+      const batch = data.batch || {};
+      const total = Number(batch.total_wallets || 0);
+      const processed = Number(batch.processed_wallets || 0);
+      const percent = total ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+      const progress = document.getElementById('celo-recovery-progress');
+      const fill = document.getElementById('celo-recovery-progress-fill');
+      const label = document.getElementById('celo-recovery-progress-label');
+      const results = document.getElementById('celo-recovery-results');
+      if (progress) progress.style.display = 'block';
+      if (fill) fill.style.width = `${percent}%`;
+      if (label) label.textContent = `${processed} of ${total} wallets · ${percent}%`;
+      if (results) results.innerHTML = (data.recoveries || []).map((recovery) => {
+        const tx = recovery.tx_hash ? `<a href="${CELO_EXPLORER_BASE}${recovery.tx_hash}" target="_blank" rel="noopener">View transaction</a>` : '';
+        const note = recovery.error_message ? escapeHtml(recovery.error_message) : tx;
+        return `<div class="celo-recovery-result"><span><strong>${escapeHtml(recovery.wallet_name || 'Wallet')}</strong><small>${escapeHtml(formatShortAddress(recovery.from_address || ''))}</small></span><span class="celo-recovery-result-value">${recovery.status === 'SUCCESS' ? `${escapeHtml(recovery.recovered_celo)} CELO` : escapeHtml(recovery.status || 'PROCESSING')}<small>${note}</small></span></div>`;
+      }).join('');
+      if (batch.status === 'PROCESSING') {
+        celoRecoveryPollTimer = setTimeout(() => pollCeloRecovery(batchId), 1800);
+      } else {
+        await loadWallets();
+        const recovered = Number(batch.recovered_wei || 0) / 1e18;
+        const toastType = batch.status === 'COMPLETED' ? 'success' : 'warning';
+        const message = batch.status === 'REQUIRES_RECONCILIATION'
+          ? 'Some recovery transactions are awaiting blockchain confirmation.'
+          : `Recovery complete: ${recovered.toFixed(6)} CELO recovered.`;
+        showToast(message, toastType);
+      }
+    } catch (err) {
+      showToast(err.message || 'Unable to load recovery progress.', 'error');
     }
   }
 
@@ -3265,6 +3337,8 @@ const app = (function () {
     submitCreateWorkspace,
     openRenameWorkspaceModal,
     submitRenameWorkspace,
+    openCeloRecoveryModal,
+    startWorkspaceCeloRecovery,
     selectWalletWorkspace,
     backToWorkspaces,
     updateImportWalletDefaultName,

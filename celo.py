@@ -219,6 +219,15 @@ class CeloClient:
             logger.warning("CELO balance query failed for %s", address)
             raise BlockchainUnavailableError("Blockchain data is temporarily unavailable.") from e
 
+    async def get_celo_balance_wei(self, address: str) -> int:
+        """Retrieve a native CELO balance in exact wei without rounding."""
+        try:
+            checksum_addr = Web3.to_checksum_address(address)
+            return int(await asyncio.to_thread(self._w3.eth.get_balance, checksum_addr))
+        except Exception as exc:
+            logger.warning("Exact CELO balance query failed for %s", address)
+            raise BlockchainUnavailableError("Blockchain data is temporarily unavailable.") from exc
+
     async def get_usat_balance(self, address: str) -> tuple[int, str]:
         """
         Retrieve USAT ERC-20 balance for an address.
@@ -320,6 +329,70 @@ class CeloClient:
             clean_err = str(e).split("\n")[0]
             logger.error("Error sending 0.05 CELO funding to %s: %s", to_chk, clean_err)
             return False, "", clean_err
+
+    async def recover_celo_imported(
+        self, private_key: str, to_address: str, fee_reserve_wei: int
+    ) -> tuple[str, str, int, int, str]:
+        """Recover one imported wallet's CELO while retaining a fixed fee reserve.
+
+        Returns ``(status, tx_hash, recovered_wei, fee_paid_wei, message)``.
+        ``PENDING`` deliberately means the broadcast outcome is uncertain and must
+        not be retried automatically, preventing duplicate transfers.
+        """
+        if config.dry_run:
+            return "FAILED", "", 0, 0, "Dry-run mode cannot submit recovery transfers."
+
+        account: Optional[LocalAccount] = None
+        try:
+            clean_key = private_key.strip()
+            if not clean_key.startswith("0x"):
+                clean_key = "0x" + clean_key
+            account = Account.from_key(clean_key)
+            from_addr = Web3.to_checksum_address(account.address)
+            to_chk = Web3.to_checksum_address(to_address)
+            if from_addr.lower() == to_chk.lower():
+                return "FAILED", "", 0, 0, "Recovery destination cannot be the source wallet."
+
+            balance_wei = await asyncio.to_thread(self._w3.eth.get_balance, from_addr)
+            recover_wei = int(balance_wei) - int(fee_reserve_wei)
+            if recover_wei <= 0:
+                return "SKIPPED", "", 0, 0, "Balance does not exceed the 0.01 CELO fee reserve."
+
+            gas_price = await self.get_gas_price()
+            gas_limit = 21000
+            if gas_price * gas_limit > int(fee_reserve_wei):
+                return "SKIPPED", "", 0, 0, "Current network fee exceeds the 0.01 CELO reserve."
+            nonce = await asyncio.to_thread(self._w3.eth.get_transaction_count, from_addr, "pending")
+            tx = {
+                "nonce": nonce,
+                "to": to_chk,
+                "value": recover_wei,
+                "gas": gas_limit,
+                "gasPrice": gas_price,
+                "chainId": self.expected_chain_id,
+            }
+            signed = account.sign_transaction(tx)
+            tx_hash = self._w3.to_hex(self._w3.keccak(signed.raw_transaction))
+            account = None
+            try:
+                await asyncio.to_thread(self._w3.eth.send_raw_transaction, signed.raw_transaction)
+            except Exception:
+                return "PENDING", tx_hash, recover_wei, 0, "Broadcast status is pending reconciliation."
+
+            try:
+                receipt = await asyncio.to_thread(self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90)
+            except Exception:
+                return "PENDING", tx_hash, recover_wei, 0, "Broadcast status is pending reconciliation."
+            if receipt.get("status") != 1:
+                return "FAILED", tx_hash, recover_wei, 0, "CELO recovery reverted on blockchain."
+            fee_paid = int(receipt.get("gasUsed", 0)) * int(receipt.get("effectiveGasPrice", gas_price))
+            logger.info("CELO recovery confirmed from %s: %s", from_addr, tx_hash)
+            return "SUCCESS", tx_hash, recover_wei, fee_paid, ""
+        except Exception as exc:
+            logger.error("CELO recovery failed: %s", str(exc).split("\n")[0])
+            return "FAILED", "", 0, 0, "Unable to submit CELO recovery."
+        finally:
+            account = None
 
     # --- USAT Token Transfers (Imported Wallets) ---
 

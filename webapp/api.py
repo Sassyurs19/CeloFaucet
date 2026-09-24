@@ -41,6 +41,9 @@ LOGIN_LOCKOUT_SECONDS = 15 * 60  # 15 minutes lockout
 # Regex for full name: 2-80 characters, letters, spaces, hyphens, apostrophes
 NAME_REGEX = re.compile(r"^[a-zA-Z\s\-']{2,80}$")
 
+# Retain task references for workspace-wide CELO recoveries while they run.
+CELO_RECOVERY_TASKS: set[asyncio.Task] = set()
+
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
     """Validate password meets minimum security criteria (min 8 chars, letter + digit)."""
@@ -551,7 +554,8 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    if not await celo_client.is_connected():
+    network_ok, _ = await celo_client.verify_network()
+    if not network_ok:
         return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
 
     try:
@@ -853,6 +857,129 @@ async def api_delete_wallet(request: web.Request) -> web.Response:
     wallet_id = int(request.match_info["id"])
     await db.delete_user_wallet(wallet_id, user_id)
     return web.json_response({"success": True})
+
+
+async def _run_workspace_celo_recovery(batch_id: str, user_id: int, workspace_id: int, destination: str) -> None:
+    """Recover imported wallets sequentially; never invoke the gas-funding flow."""
+    reserve_wei = int(Web3.to_wei(config.celo_recovery_fee_reserve, "ether"))
+    recovered_total = 0
+    processed = 0
+    eligible = 0
+    requires_reconciliation = False
+    try:
+        wallets = [wallet for wallet in await db.get_user_wallets(user_id) if str(wallet.get("workspace_id")) == str(workspace_id)]
+        for wallet in wallets:
+            processed += 1
+            wallet_id = int(wallet["id"])
+            recovery_id = f"celo_recovery_{uuid.uuid4().hex}"
+            source_address = Web3.to_checksum_address(wallet["address"])
+            if wallet.get("wallet_type") != "imported" or not wallet.get("encrypted_private_key"):
+                await db.create_celo_recovery(recovery_id, batch_id, user_id, workspace_id, wallet_id, source_address, destination, 0, reserve_wei, 0)
+                await db.update_celo_recovery(recovery_id, "SKIPPED", error_message="This wallet is not available for automatic recovery.")
+                await db.update_celo_recovery_batch(batch_id, processed_wallets=processed, recovered_wei=recovered_total)
+                continue
+
+            try:
+                balance_wei = await celo_client.get_celo_balance_wei(source_address)
+            except BlockchainUnavailableError:
+                await db.create_celo_recovery(recovery_id, batch_id, user_id, workspace_id, wallet_id, source_address, destination, 0, reserve_wei, 0)
+                await db.update_celo_recovery(recovery_id, "FAILED", error_message="Blockchain balance is temporarily unavailable.")
+                await db.update_celo_recovery_batch(batch_id, processed_wallets=processed, recovered_wei=recovered_total)
+                continue
+
+            requested_wei = max(0, balance_wei - reserve_wei)
+            await db.create_celo_recovery(recovery_id, batch_id, user_id, workspace_id, wallet_id, source_address, destination, balance_wei, reserve_wei, requested_wei)
+            if requested_wei <= 0:
+                await db.update_celo_recovery(recovery_id, "SKIPPED", error_message="Balance does not exceed the 0.01 CELO fee reserve.")
+                await db.update_celo_recovery_batch(batch_id, processed_wallets=processed, recovered_wei=recovered_total)
+                continue
+
+            eligible += 1
+            try:
+                private_key = encryption_service.decrypt(wallet["encrypted_private_key"])
+                derived = Account.from_key(private_key).address
+                if Web3.to_checksum_address(derived).lower() != source_address.lower():
+                    raise ValueError("Stored key does not match the wallet address.")
+                status, tx_hash, recovered_wei, fee_paid_wei, message = await celo_client.recover_celo_imported(private_key, destination, reserve_wei)
+            except Exception:
+                status, tx_hash, recovered_wei, fee_paid_wei, message = "FAILED", "", 0, 0, "Unable to access this wallet for recovery."
+            finally:
+                private_key = None
+
+            await db.update_celo_recovery(
+                recovery_id, status, tx_hash=tx_hash or None, fee_paid_wei=fee_paid_wei or None,
+                error_message=message or None, recovered_wei=recovered_wei,
+            )
+            if status == "SUCCESS":
+                recovered_total += recovered_wei
+            elif status == "PENDING":
+                requires_reconciliation = True
+            await db.update_celo_recovery_batch(batch_id, eligible_wallets=eligible, processed_wallets=processed, recovered_wei=recovered_total)
+
+        final_status = "REQUIRES_RECONCILIATION" if requires_reconciliation else "COMPLETED"
+        await db.update_celo_recovery_batch(batch_id, status=final_status, eligible_wallets=eligible, processed_wallets=processed, recovered_wei=recovered_total)
+    except Exception:
+        logger.exception("Workspace CELO recovery batch failed.")
+        await db.update_celo_recovery_batch(batch_id, status="FAILED", processed_wallets=processed, recovered_wei=recovered_total)
+
+
+async def api_start_workspace_celo_recovery(request: web.Request) -> web.Response:
+    """Start confirmed automatic CELO recovery for all imported wallets in one workspace."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        workspace_id = int(request.match_info["id"])
+    except (TypeError, ValueError):
+        return web.json_response({"error": "Invalid workspace."}, status=400)
+    workspace = await db.get_user_workspace_by_id(workspace_id, user_id)
+    if not workspace:
+        return web.json_response({"error": "Workspace not found."}, status=404)
+    if config.dry_run:
+        return web.json_response({"error": "CELO recovery is unavailable while DRY_RUN is enabled."}, status=503)
+    try:
+        request_data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Confirmation is required before recovering CELO."}, status=400)
+    if not isinstance(request_data, dict) or request_data.get("confirm") is not True:
+        return web.json_response({"error": "Confirmation is required before recovering CELO."}, status=400)
+    try:
+        destination = Web3.to_checksum_address(config.funding_address)
+    except Exception:
+        return web.json_response({"error": "The funding wallet destination is not configured."}, status=503)
+    network_ok, _ = await celo_client.verify_network()
+    if not network_ok:
+        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
+
+    wallets = [wallet for wallet in await db.get_user_wallets(user_id) if str(wallet.get("workspace_id")) == str(workspace_id)]
+    if not wallets:
+        return web.json_response({"error": "This workspace has no wallets to recover."}, status=400)
+    batch_id = f"celo_batch_{uuid.uuid4().hex}"
+    try:
+        await db.create_celo_recovery_batch(batch_id, user_id, workspace_id, len(wallets))
+    except Exception:
+        return web.json_response({"error": "A CELO recovery is already running for this workspace."}, status=409)
+
+    task = asyncio.create_task(_run_workspace_celo_recovery(batch_id, user_id, workspace_id, destination))
+    CELO_RECOVERY_TASKS.add(task)
+    task.add_done_callback(CELO_RECOVERY_TASKS.discard)
+    return web.json_response({"success": True, "batch_id": batch_id, "total_wallets": len(wallets), "fee_reserve_celo": f"{config.celo_recovery_fee_reserve:.2f}"}, status=202)
+
+
+async def api_get_workspace_celo_recovery_status(request: web.Request) -> web.Response:
+    """Return a user's recovery progress and the per-wallet audited results."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    batch_id = str(request.match_info["batch_id"])
+    batch = await db.get_celo_recovery_batch(batch_id, user_id)
+    if not batch:
+        return web.json_response({"error": "Recovery batch not found."}, status=404)
+    recoveries = await db.get_celo_recoveries(batch_id, user_id)
+    for recovery in recoveries:
+        recovery["recovered_celo"] = f"{Web3.from_wei(int(recovery.get('recovered_wei') or 0), 'ether'):.6f}"
+        recovery["fee_paid_celo"] = f"{Web3.from_wei(int(recovery.get('fee_paid_wei') or 0), 'ether'):.6f}" if recovery.get("fee_paid_wei") else None
+    return web.json_response({"batch": batch, "recoveries": recoveries, "fee_reserve_celo": f"{config.celo_recovery_fee_reserve:.2f}"})
 
 
 async def api_fill_wallet_celo(request: web.Request) -> web.Response:
@@ -2023,6 +2150,8 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/wallets/{id}/payments", api_get_wallet_payment_history)
     app.router.add_patch("/api/wallets/{id}", api_rename_wallet)
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
+    app.router.add_post("/api/workspaces/{id}/celo-recovery", api_start_workspace_celo_recovery)
+    app.router.add_get("/api/celo-recoveries/{batch_id}", api_get_workspace_celo_recovery_status)
     app.router.add_post("/api/wallets/{id}/fill-celo", api_fill_wallet_celo)
 
     # Payments
