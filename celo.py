@@ -2,7 +2,7 @@
 Celo blockchain interface module for Celo Mainnet and USAT ERC-20 token interactions.
 Wraps Web3.py RPC calls with async execution to prevent blocking the aiogram event loop.
 Verifies chain ID (42220), enforces integer base unit token calculations, and handles
-automatic 0.05 CELO gas funding from the dedicated funding wallet.
+automatic CELO gas funding from the dedicated funding wallet.
 """
 
 from __future__ import annotations
@@ -261,13 +261,13 @@ class CeloClient:
             logger.warning("Could not get dynamic gas price, fallback to 5 Gwei: %s", e)
             return self._w3.to_wei(5, "gwei")
 
-    # --- Automatic 0.05 CELO Gas Funding ---
+    # --- CELO Gas Funding ---
 
     async def send_celo_funding(
-        self, to_address: str, amount_celo: float = 0.05
+        self, to_address: str, amount_celo: float = 0.02
     ) -> tuple[bool, str, str]:
         """
-        Transfer 0.05 CELO from the dedicated funding wallet to user's wallet address.
+        Transfer the requested server-authorized CELO amount from the funding wallet.
         Waits for on-chain receipt before returning.
         
         Returns:
@@ -314,20 +314,20 @@ class CeloClient:
                     await asyncio.to_thread(self._w3.eth.send_raw_transaction, signed.raw_transaction)
                 except Exception:
                     return False, tx_hash, "Transaction status is pending reconciliation."
-                logger.info("Broadcast 0.05 CELO funding to %s: %s (nonce=%d)", to_chk, tx_hash, nonce)
+                logger.info("Broadcast %.6f CELO funding to %s: %s (nonce=%d)", amount_celo, to_chk, tx_hash, nonce)
 
             # Wait for receipt
             receipt = await asyncio.to_thread(
                 self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
             )
             if receipt.get("status") == 1:
-                logger.info("0.05 CELO funding confirmed for %s: %s", to_chk, tx_hash)
+                logger.info("%.6f CELO funding confirmed for %s: %s", amount_celo, to_chk, tx_hash)
                 return True, tx_hash, ""
             else:
                 return False, tx_hash, "Funding transaction reverted on blockchain."
         except Exception as e:
             clean_err = str(e).split("\n")[0]
-            logger.error("Error sending 0.05 CELO funding to %s: %s", to_chk, clean_err)
+            logger.error("Error sending %.6f CELO funding to %s: %s", amount_celo, to_chk, clean_err)
             return False, "", clean_err
 
     async def recover_celo_imported(
@@ -440,11 +440,14 @@ class CeloClient:
                 "chainId": config.celo_chain_id,
             })
             
-            # Estimate gas or fallback to 75,000 for standard ERC-20 transfer
+            # Estimate gas or fallback to 80,000 for standard ERC-20 transfer
             try:
                 est_gas = await asyncio.to_thread(self._w3.eth.estimate_gas, tx_data)
                 tx_data["gas"] = int(est_gas * 1.2)  # 20% safety margin
-            except Exception:
+            except Exception as e:
+                err_str = str(e).lower()
+                if any(k in err_str for k in ["insufficient funds", "gas required exceeds"]):
+                    return False, "", 0, f"Insufficient CELO for gas: {str(e).splitlines()[0]}"
                 tx_data["gas"] = 80000
 
             # Sign with user's private key
@@ -458,7 +461,11 @@ class CeloClient:
             tx_hash = self._w3.to_hex(self._w3.keccak(signed_tx.raw_transaction))
             try:
                 await asyncio.to_thread(self._w3.eth.send_raw_transaction, signed_tx.raw_transaction)
-            except Exception:
+            except Exception as e:
+                err_str = str(e).lower()
+                if any(k in err_str for k in ["insufficient funds", "gas required exceeds"]):
+                    logger.warning("USAT transfer rejected due to gas/funds: %s", e)
+                    return False, "", 0, f"Insufficient CELO for gas: {str(e).splitlines()[0]}"
                 return False, tx_hash, 0, "Transaction status is pending reconciliation."
             logger.info("USAT transfer broadcast from %s to %s: %s", from_addr, to_chk, tx_hash)
 

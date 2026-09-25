@@ -2,7 +2,7 @@
 Production-ready REST API router for CELO USAT Payment Web Application.
 Enforces strict server-side authorization, fixed $2.00 USAT amounts,
 AES-256-GCM encrypted private key imports with recovery phrase rejection,
-automatic 0.05 CELO gas funding, rate limiting, and admin controls.
+automatic 0.02 CELO gas funding, rate limiting, and admin controls.
 """
 
 from __future__ import annotations
@@ -43,6 +43,11 @@ NAME_REGEX = re.compile(r"^[a-zA-Z\s\-']{2,80}$")
 
 # Retain task references for workspace-wide CELO recoveries while they run.
 CELO_RECOVERY_TASKS: set[asyncio.Task] = set()
+
+# Gas assistance is deliberately server-controlled.  Clients may request a top-up,
+# but they cannot select its amount.
+PAYMENT_GAS_THRESHOLD_CELO = 0.02
+GAS_TOP_UP_CELO = 0.02
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
@@ -985,7 +990,8 @@ async def api_get_workspace_celo_recovery_status(request: web.Request) -> web.Re
 async def api_fill_wallet_celo(request: web.Request) -> web.Response:
     """
     Fund user's wallet with CELO gas fee from the dedicated faucet wallet.
-    Uses the configured faucet wallet (0x84D118A43b60bd73D113c0ef08F238BE866E3A2b).
+    Defaults to 0.02 CELO per user request.
+    Uses the configured faucet wallet.
     """
     user_id = get_user_id_from_request(request)
     if not user_id:
@@ -995,6 +1001,8 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
         wallet_id = int(request.match_info["id"])
     except (ValueError, KeyError):
         return web.json_response({"error": "Invalid wallet ID"}, status=400)
+
+    funding_amt = GAS_TOP_UP_CELO
 
     wallet = await db.get_user_wallet_by_id(wallet_id, user_id)
     if not wallet:
@@ -1008,8 +1016,6 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
     if not wallet_manager.is_configured:
         return web.json_response({"error": "CELO faucet funding wallet is not configured on server."}, status=503)
 
-    funding_amt = float(config.celo_funding_amount or 0.05)
-
     faucet_bal = await celo_client.get_celo_balance(wallet_manager.address)
     if faucet_bal < (funding_amt + config.min_gas_reserve):
         return web.json_response({
@@ -1017,9 +1023,10 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
         }, status=503)
 
     current_user_celo = await celo_client.get_celo_balance(target_addr)
-    if round(current_user_celo, 4) > 0:
+    # Prevent excessive balance buildup while allowing easy 0.02 CELO gas top-up
+    if current_user_celo >= 1.0:
         return web.json_response({
-            "error": f"Wallet already has {current_user_celo:.4f} CELO gas fee. Faucet funding is only available for wallets with 0 CELO."
+            "error": f"Wallet already has ample CELO gas ({current_user_celo:.4f} CELO). Refill not needed."
         }, status=400)
 
     success, tx_hash, err_msg = await celo_client.send_celo_funding(
@@ -1065,6 +1072,107 @@ async def api_fill_wallet_celo(request: web.Request) -> web.Response:
             "celo_balance": f"{new_user_celo:.4f}",
         },
         "message": f"Successfully sent {funding_amt:.2f} CELO fee to {wallet['wallet_name']}!",
+    })
+
+
+async def api_fill_workspace_celo(request: web.Request) -> web.Response:
+    """
+    Fund all wallets in a specific workspace with 0.02 CELO gas fee per wallet.
+    Uses the dedicated faucet wallet.
+    """
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        workspace_id = int(request.match_info["id"])
+    except (ValueError, KeyError):
+        return web.json_response({"error": "Invalid workspace ID"}, status=400)
+
+    funding_amt = GAS_TOP_UP_CELO
+
+    workspace = await db.get_user_workspace_by_id(workspace_id, user_id)
+    if not workspace:
+        return web.json_response({"error": "Workspace not found or unauthorized."}, status=404)
+
+    all_wallets = await db.get_user_wallets(user_id)
+    workspace_wallets = [w for w in all_wallets if str(w.get("workspace_id")) == str(workspace_id)]
+    if not workspace_wallets:
+        return web.json_response({"error": f"No wallets found in workspace '{workspace['name']}' to add CELO."}, status=400)
+
+    if not wallet_manager.is_configured:
+        wallet_manager._initialize_account()
+
+    if not wallet_manager.is_configured:
+        return web.json_response({"error": "CELO faucet funding wallet is not configured on server."}, status=503)
+
+    total_needed = (len(workspace_wallets) * funding_amt) + config.min_gas_reserve
+    faucet_bal = await celo_client.get_celo_balance(wallet_manager.address)
+    if faucet_bal < total_needed:
+        return web.json_response({
+            "error": f"Faucet reserve ({faucet_bal:.4f} CELO) is insufficient to fund {len(workspace_wallets)} wallets ({total_needed:.4f} CELO needed). Please contact admin."
+        }, status=503)
+
+    results = []
+    funded_count = 0
+    for w in workspace_wallets:
+        target_addr = Web3.to_checksum_address(w["address"])
+        try:
+            success, tx_hash, err_msg = await celo_client.send_celo_funding(
+                to_address=target_addr,
+                amount_celo=funding_amt,
+            )
+            if success:
+                funded_count += 1
+                req_id = f"fill_gas_{uuid.uuid4().hex[:12]}"
+                try:
+                    await db.create_claim(
+                        request_id=req_id,
+                        telegram_id=user_id,
+                        destination_address=target_addr,
+                        amount=funding_amt,
+                    )
+                    await db.update_claim_status(
+                        request_id=req_id,
+                        status="SUCCESS",
+                        tx_hash=tx_hash,
+                    )
+                except Exception as e:
+                    logger.warning("Could not record claim for %s: %s", target_addr, e)
+                results.append({
+                    "wallet_id": w["id"],
+                    "wallet_name": w["wallet_name"],
+                    "address": target_addr,
+                    "success": True,
+                    "tx_hash": tx_hash,
+                })
+            else:
+                results.append({
+                    "wallet_id": w["id"],
+                    "wallet_name": w["wallet_name"],
+                    "address": target_addr,
+                    "success": False,
+                    "error": err_msg,
+                })
+        except Exception as exc:
+            results.append({
+                "wallet_id": w["id"],
+                "wallet_name": w["wallet_name"],
+                "address": target_addr,
+                "success": False,
+                "error": str(exc),
+            })
+
+    return web.json_response({
+        "success": True,
+        "workspace_id": workspace_id,
+        "workspace_name": workspace["name"],
+        "amount_per_wallet": funding_amt,
+        "amount_formatted": f"{funding_amt:.2f} CELO",
+        "total_wallets": len(workspace_wallets),
+        "funded_wallets": funded_count,
+        "results": results,
+        "message": f"Successfully added {funding_amt:.2f} CELO to {funded_count} of {len(workspace_wallets)} wallets in {workspace['name']}!",
     })
 
 
@@ -1148,7 +1256,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
     2. Resolve active receiving wallet.
     3. Check active payments (1 active payment per user max).
     4. Check USAT balance (>= 2,000,000 base units).
-    5. Gas check: If CELO < 0.005, auto-fund 0.05 CELO from dedicated wallet & wait for receipt.
+    5. Gas check: If CELO < 0.02, add one server-controlled 0.02 CELO top-up and wait for its receipt.
     6. If imported: server signs with decrypted key and broadcasts.
     7. If connected: returns prepared transaction parameters for in-wallet client signing.
     """
@@ -1300,7 +1408,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
         user_id=user_id,
     )
 
-    # 6. Gas check & automatic 0.05 CELO subsidy if balance < 0.005 CELO
+    # 6. Add the fixed gas top-up before a transfer when the wallet is low on CELO.
     try:
         current_celo = await celo_client.get_celo_balance(source_addr)
     except BlockchainUnavailableError:
@@ -1308,10 +1416,10 @@ async def api_create_payment(request: web.Request) -> web.Response:
     celo_funded = False
     fund_tx_hash = None
 
-    if current_celo < config.min_user_celo_threshold:
-        logger.info("Auto-funding 0.05 CELO to %s for payment %s (balance: %.4f CELO)", source_addr, payment_id, current_celo)
+    if current_celo < PAYMENT_GAS_THRESHOLD_CELO:
+        logger.info("Auto-funding %.2f CELO to %s for payment %s (balance: %.4f CELO)", GAS_TOP_UP_CELO, source_addr, payment_id, current_celo)
         fund_ok, f_tx, f_err = await celo_client.send_celo_funding(
-            to_address=source_addr, amount_celo=config.celo_funding_amount
+            to_address=source_addr, amount_celo=GAS_TOP_UP_CELO
         )
         if fund_ok:
             celo_funded = True
@@ -1332,7 +1440,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
                     payment_id=payment_id, status="CONFIRMING", celo_fund_tx_hash=f_tx, error_message=f_err
                 )
                 return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
-            await db.update_usat_payment_status(payment_id, "FAILED", error_message="Gas funding failed")
+            await db.update_usat_payment_status(payment_id, "FAILED", error_message="Gas funding failed before transfer submission")
             logger.warning("Gas funding failed for %s: %s", source_addr, f_err)
             return web.json_response({"error": "Gas Funding Failed. The transfer was not submitted."}, status=503)
 
@@ -1351,6 +1459,59 @@ async def api_create_payment(request: web.Request) -> web.Response:
             to_address=dest_addr,
             base_units=required_units,
         )
+
+        # A broadcast with an uncertain outcome must be reconciled, never retried.
+        # Only a deterministic pre-broadcast insufficient-funds error may receive one
+        # fixed gas top-up and one retry.
+        if not success:
+            err_lower = (err_desc or "").lower()
+            if tx_hash or "pending reconciliation" in err_lower:
+                decrypted_pk = None
+                await db.update_usat_payment_status(
+                    payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err_desc
+                )
+                return web.json_response(
+                    {"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202
+                )
+
+            is_insufficient_gas = any(phrase in err_lower for phrase in (
+                "insufficient celo for gas", "insufficient funds", "gas required exceeds"
+            ))
+            if is_insufficient_gas and not celo_funded:
+                fresh_celo = await celo_client.get_celo_balance(source_addr)
+                logger.info(
+                    "Payment %s has insufficient CELO (balance: %.4f CELO). Adding %.2f CELO and retrying once.",
+                    payment_id, fresh_celo, GAS_TOP_UP_CELO
+                )
+                fund_ok, f_tx, f_err = await celo_client.send_celo_funding(
+                    to_address=source_addr, amount_celo=GAS_TOP_UP_CELO
+                )
+                if fund_ok:
+                    celo_funded = True
+                    fund_tx_hash = f_tx
+                    await db.update_usat_payment_status(
+                        payment_id=payment_id,
+                        status="PROCESSING",
+                        celo_funded=1,
+                        celo_fund_tx_hash=f_tx,
+                    )
+                    await asyncio.sleep(1.5)
+                    # Retry once only after the gas top-up has been confirmed.
+                    success, tx_hash, block_num, err_desc = await celo_client.transfer_usat_imported(
+                        private_key=decrypted_pk,
+                        to_address=dest_addr,
+                        base_units=required_units,
+                    )
+                    logger.info("Retry result after %.2f CELO funding for %s: success=%s, tx=%s, err=%s", GAS_TOP_UP_CELO, payment_id, success, tx_hash, err_desc)
+                elif f_tx or "pending reconciliation" in (f_err or "").lower():
+                    decrypted_pk = None
+                    await db.update_usat_payment_status(
+                        payment_id, "CONFIRMING", celo_fund_tx_hash=f_tx, error_message=f_err
+                    )
+                    return web.json_response(
+                        {"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202
+                    )
+
         decrypted_pk = None
 
         if success:
@@ -2152,6 +2313,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
     app.router.add_post("/api/workspaces/{id}/celo-recovery", api_start_workspace_celo_recovery)
     app.router.add_get("/api/celo-recoveries/{batch_id}", api_get_workspace_celo_recovery_status)
+    app.router.add_post("/api/workspaces/{id}/fill-celo", api_fill_workspace_celo)
     app.router.add_post("/api/wallets/{id}/fill-celo", api_fill_wallet_celo)
 
     # Payments

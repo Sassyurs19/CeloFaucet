@@ -1043,7 +1043,7 @@ const app = (function () {
         const activeCelo = activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
         workspaceBar?.classList.remove('is-chooser');
         workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
-          <div class="workspace-current"><span class="workspace-current-name"><strong>${escapeHtml(activeWorkspace.name)}</strong><small>${activeWallets.length} ${activeWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-current-balances"><strong>$${activeUsat.toFixed(2)} USAT</strong><small>${activeCelo.toFixed(4)} CELO</small></span><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
+          <div class="workspace-current"><span class="workspace-current-name"><strong>${escapeHtml(activeWorkspace.name)}</strong><small>${activeWallets.length} ${activeWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-current-balances"><strong>$${activeUsat.toFixed(2)} USAT</strong><small>${activeCelo.toFixed(4)} CELO</small></span><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-add-celo-btn" onclick="app.fillWorkspaceCelo(${activeWorkspace.id}, event)" title="Add 0.02 CELO to all wallets in this workspace"><i data-lucide="fuel" class="icon-xs"></i><span>Add CELO</span></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
         if (addWalletButton) addWalletButton.style.display = 'inline-flex';
       } else {
         workspaceBar?.classList.add('is-chooser');
@@ -1052,7 +1052,7 @@ const app = (function () {
           const usatBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
           const celoBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
           return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
-            <i data-lucide="wallet" class="icon-sm"></i><span class="workspace-choice-name">${escapeHtml(workspace.name)}<small>${workspaceWallets.length} ${workspaceWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-choice-balances"><strong class="${usatBalance > 0 ? 'balance-positive' : 'balance-zero'}">$${usatBalance.toFixed(2)} USAT</strong><small>${celoBalance.toFixed(4)} CELO</small></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
+            <i data-lucide="wallet" class="icon-sm"></i><span class="workspace-choice-name">${escapeHtml(workspace.name)}<small>${workspaceWallets.length} ${workspaceWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-choice-balances"><strong class="${usatBalance > 0 ? 'balance-positive' : 'balance-zero'}">$${usatBalance.toFixed(2)} USAT</strong><small>${celoBalance.toFixed(4)} CELO</small></span><button type="button" class="btn btn-secondary btn-xs workspace-choice-add-btn" onclick="app.fillWorkspaceCelo('${escapeHtml(workspace.id)}', event)" title="Add 0.02 CELO to all wallets in this workspace"><i data-lucide="fuel" class="icon-xs"></i> Add CELO</button><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
           </button>`;
         }).join('') + `<button type="button" class="workspace-choice workspace-create-choice" onclick="app.openCreateWorkspaceModal()">
           <i data-lucide="folder-plus" class="icon-sm"></i><span class="workspace-choice-name">New Workspace<small>Create a separate wallet space</small></span><span class="workspace-choice-balances"><strong>+</strong></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
@@ -1715,7 +1715,7 @@ const app = (function () {
       state.activePayment = payment;
 
       if (res.celo_funded || payment.celo_funded) {
-        setPaymentStep(2, '0.05 CELO Gas Subsidy sent! Gas confirmed on Celo.');
+        setPaymentStep(2, '0.02 CELO gas added automatically. Gas confirmed on Celo.');
       } else {
         setPaymentStep(2, 'CELO gas balance sufficient. Proceeding to transfer...');
       }
@@ -1770,9 +1770,9 @@ const app = (function () {
         }
       }
     } catch (err) {
-      if (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) {
-        const payId = state.activePayment.payment_id || state.activePayment.id;
-        apiRequest(`/api/payments/${payId}/cancel`, { method: 'POST' }).catch(() => {});
+      const errMsg = (err.message || '').toLowerCase();
+      if (errMsg.includes('gas') || errMsg.includes('celo')) {
+        showToast('CELO gas could not be added automatically. Use Add CELO on the wallet to add 0.02 CELO, then try again.', 'warning');
       }
       setPaymentFailed(err.message || 'Payment failed.');
     } finally {
@@ -2108,6 +2108,7 @@ const app = (function () {
               <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}</strong></span></div>
               <div class="wallet-detail-actions">
                 <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
+                <button class="btn btn-secondary btn-sm" onclick="app.fillCeloFee(${w.id}, event)" title="Add 0.02 CELO gas fee to this wallet"><i data-lucide="fuel" class="icon-xs"></i> Add CELO</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')"><i data-lucide="pencil" class="icon-xs"></i> Rename</button>
                 <button class="btn btn-danger btn-sm" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-xs"></i> Remove</button>
@@ -2255,23 +2256,32 @@ const app = (function () {
     const wallet = state.wallets.find((w) => w.id === walletId);
     const walletName = wallet?.name || wallet?.label || wallet?.wallet_name || 'this wallet';
 
-    const celoBal = parseFloat(wallet?.celo_balance || 0);
-    if (celoBal > 0) {
-      showToast(`Wallet already has ${celoBal.toFixed(4)} CELO gas fee. Faucet fee refill is only available for wallets with 0 CELO.`, 'warning');
-      return;
-    }
-
     try {
-      showToast(`Broadcasting 0.05 CELO gas fee to ${walletName}...`, 'info');
+      showToast(`Broadcasting 0.02 CELO gas fee to ${walletName}...`, 'info');
       const data = await apiRequest(`/api/wallets/${walletId}/fill-celo`, { method: 'POST' });
 
-      showToast(`Successfully filled ${data.amount_formatted || '0.05 CELO'} for ${walletName}!`, 'success');
+      showToast(`Successfully filled ${data.amount_formatted || '0.02 CELO'} for ${walletName}!`, 'success');
       if (data.tx_hash) {
         showToast(`Tx Confirmed: ${data.tx_hash.slice(0, 10)}...`, 'info');
       }
       await loadWallets();
     } catch (err) {
       showToast(`Fill CELO fee error: ${err.message}`, 'error');
+    }
+  }
+
+  async function fillWorkspaceCelo(workspaceId, event) {
+    if (event && event.stopPropagation) event.stopPropagation();
+    const ws = (state.workspaces || []).find((w) => String(w.id) === String(workspaceId));
+    const wsName = ws?.name || 'this workspace';
+    try {
+      showToast(`Adding 0.02 CELO gas fee to all wallets in ${wsName}...`, 'info');
+      const data = await apiRequest(`/api/workspaces/${workspaceId}/fill-celo`, { method: 'POST' });
+      showToast(data.message || `Successfully added 0.02 CELO to wallets in ${wsName}!`, 'success');
+      await loadWallets();
+      await loadWorkspaces();
+    } catch (err) {
+      showToast(`Add CELO to workspace error: ${err.message}`, 'error');
     }
   }
 
@@ -3373,6 +3383,7 @@ const app = (function () {
     useWalletForPayment,
     refreshSingleWallet,
     fillCeloFee,
+    fillWorkspaceCelo,
     fillCeloFeeForSelected,
     openRenameWalletModal,
     submitRenameWallet,
