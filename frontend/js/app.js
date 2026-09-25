@@ -31,6 +31,9 @@ const app = (function () {
   };
 
   let searchDebounceTimers = {};
+  let rewardPoolDisplayedAmount = null;
+  let rewardPoolAnimationFrame = null;
+  let rewardPoolRefreshTimer = null;
 
   // --- SVG Icon Helper & Lucide Refresh ---
 
@@ -614,15 +617,20 @@ const app = (function () {
     // Load view data
     if (viewId === 'dashboard') {
       loadDashboardData();
+      startRewardPoolRefresh();
     } else if (viewId === 'wallets') {
+      stopRewardPoolRefresh();
       // Always begin with the workspace chooser so older wallets remain easy to find.
       state.activeWorkspaceId = null;
       loadWallets();
     } else if (viewId === 'payments') {
+      stopRewardPoolRefresh();
       loadPaymentsHistory();
     } else if (viewId === 'profile') {
+      stopRewardPoolRefresh();
       loadProfile();
     } else if (viewId === 'admin') {
+      stopRewardPoolRefresh();
       loadAdminView();
     }
 
@@ -936,11 +944,53 @@ const app = (function () {
     try {
       const data = await apiRequest('/api/rewards/status');
       const amount = Number.parseFloat(data.balance_usat);
-      balance.textContent = Number.isFinite(amount) ? amount.toFixed(2) : 'Unavailable';
+      if (!Number.isFinite(amount)) throw new Error('Invalid reward-pool balance.');
+      animateRewardPoolBalance(balance, amount);
     } catch (err) {
       // Never turn an RPC failure into a false zero balance.
+      if (rewardPoolAnimationFrame) cancelAnimationFrame(rewardPoolAnimationFrame);
+      rewardPoolAnimationFrame = null;
+      rewardPoolDisplayedAmount = null;
       balance.textContent = 'Unavailable';
     }
+  }
+
+  function animateRewardPoolBalance(balanceElement, targetAmount) {
+    const startAmount = Number.isFinite(rewardPoolDisplayedAmount)
+      ? rewardPoolDisplayedAmount
+      : targetAmount;
+    const startedAt = performance.now();
+    const duration = startAmount === targetAmount ? 0 : 850;
+    if (rewardPoolAnimationFrame) cancelAnimationFrame(rewardPoolAnimationFrame);
+    balanceElement.parentElement?.classList.toggle('is-updating', duration > 0);
+
+    const render = (now) => {
+      const progress = duration ? Math.min((now - startedAt) / duration, 1) : 1;
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const currentAmount = startAmount + ((targetAmount - startAmount) * eased);
+      balanceElement.textContent = currentAmount.toFixed(2);
+      if (progress < 1) {
+        rewardPoolAnimationFrame = requestAnimationFrame(render);
+      } else {
+        rewardPoolDisplayedAmount = targetAmount;
+        rewardPoolAnimationFrame = null;
+        balanceElement.parentElement?.classList.remove('is-updating');
+      }
+    };
+    rewardPoolAnimationFrame = requestAnimationFrame(render);
+  }
+
+  function startRewardPoolRefresh() {
+    if (rewardPoolRefreshTimer) return;
+    rewardPoolRefreshTimer = setInterval(() => {
+      if (state.currentView === 'dashboard' && state.user) loadRewardPoolStatus();
+    }, 15000);
+  }
+
+  function stopRewardPoolRefresh() {
+    if (!rewardPoolRefreshTimer) return;
+    clearInterval(rewardPoolRefreshTimer);
+    rewardPoolRefreshTimer = null;
   }
 
   async function loadSavedRecipients() {

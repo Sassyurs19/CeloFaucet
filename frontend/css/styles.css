@@ -1419,14 +1419,16 @@ i[data-lucide], svg.lucide {
 }
 
 /* --- Premium Centered Circular/Rounded Transfer Box Styles --- */
-.reward-pool-card { max-width: 480px; margin: 0 auto 16px; padding: 15px 17px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid rgba(16, 185, 129, 0.22); border-radius: 18px; background: linear-gradient(120deg, rgba(236, 253, 245, 0.94), #ffffff); box-shadow: 0 10px 26px -22px rgba(5, 150, 105, 0.42); }
-.reward-pool-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.reward-pool-card { max-width: 480px; margin: 0 auto 16px; padding: 17px 19px; border: 1px solid rgba(16, 185, 129, 0.22); border-radius: 18px; background: linear-gradient(120deg, rgba(236, 253, 245, 0.94), #ffffff); box-shadow: 0 10px 26px -22px rgba(5, 150, 105, 0.42); }
+.reward-pool-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
 .reward-pool-status { display: inline-flex; align-items: center; gap: 5px; color: var(--balance-available-dark); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .reward-pool-status i { color: var(--celo-green); }
-.reward-pool-label { color: var(--text-secondary); font-size: 13px; font-weight: 650; }
-.reward-pool-balance { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; text-align: right; white-space: nowrap; }
-.reward-pool-balance strong { color: var(--text-primary); font-size: 23px; line-height: 1; font-weight: 800; letter-spacing: -0.04em; }
-.reward-pool-balance span { color: var(--text-muted); font-size: 11px; font-weight: 800; }
+.reward-pool-label { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.reward-pool-balance { display: flex; align-items: baseline; gap: 7px; margin-top: 3px; white-space: nowrap; }
+.reward-pool-balance strong { color: var(--text-primary); font-size: clamp(34px, 5vw, 44px); line-height: .95; font-weight: 850; letter-spacing: -0.055em; font-variant-numeric: tabular-nums; }
+.reward-pool-balance span { color: var(--text-muted); font-size: 12px; font-weight: 800; }
+.reward-pool-update { color: var(--text-muted); font-size: 10px; font-weight: 650; }
+.reward-pool-balance.is-updating strong { color: var(--balance-available-dark); }
 .pay-card-premium {
   max-width: 480px;
   margin: 0 auto;
@@ -2615,7 +2617,7 @@ button.is-spinning > i {
   }
 
   .reward-pool-card { padding: 13px 14px; border-radius: 16px; }
-  .reward-pool-balance strong { font-size: 20px; }
+  .reward-pool-balance strong { font-size: 32px; }
 
   .pay-capsule {
     padding: 12px 14px;
