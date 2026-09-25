@@ -2313,8 +2313,6 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
     app.router.add_post("/api/workspaces/{id}/celo-recovery", api_start_workspace_celo_recovery)
     app.router.add_get("/api/celo-recoveries/{batch_id}", api_get_workspace_celo_recovery_status)
-    app.router.add_post("/api/workspaces/{id}/fill-celo", api_fill_workspace_celo)
-    app.router.add_post("/api/wallets/{id}/fill-celo", api_fill_wallet_celo)
 
     # Payments
     app.router.add_get("/api/receiving-wallets", api_get_receiving_wallets)

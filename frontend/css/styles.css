@@ -1123,7 +1123,7 @@ i[data-lucide], svg.lucide {
   .workspace-choice-balances strong { font-size: 12px; }
   .workspace-current { width: 100%; padding: 8px 9px; gap: 7px; }
   .workspace-back { padding: 4px 1px; font-size: 11px; }
-  .workspace-recover-btn, .workspace-add-celo-btn { margin-left: 0; padding: 5px 7px; font-size: 11px; }
+  .workspace-recover-btn { margin-left: 0; padding: 5px 7px; font-size: 11px; }
   .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
   .wallet-detail-actions { flex-wrap: wrap; }
 }
@@ -2144,9 +2144,7 @@ i[data-lucide], svg.lucide {
 .admin-user-workspace-wallets > .admin-user-wallet-empty { border-top: 0; }
 .admin-user-actions { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-color); }
 .admin-user-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
-.workspace-add-celo-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
 .workspace-recover-btn { display: inline-flex; align-items: center; gap: 5px; }
-.workspace-choice-add-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 11px; margin-left: auto; }
 .celo-recovery-note { display: flex; flex-direction: column; gap: 4px; margin: 14px 0; padding: 12px; border: 1px solid rgba(16, 185, 129, .22); border-radius: var(--radius-md); background: var(--balance-available-subtle); color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
 .celo-recovery-note strong { color: var(--text-primary); }
 .celo-recovery-progress-head { display: flex; justify-content: space-between; gap: 10px; margin: 14px 0 7px; font-size: 12px; color: var(--text-secondary); }
