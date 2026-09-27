@@ -2044,6 +2044,30 @@ async def api_admin_delete_user(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "message": "User account deleted."})
 
 
+async def api_admin_delete_wallet(request: web.Request) -> web.Response:
+    """Permanently remove one saved wallet record after administrator confirmation."""
+    if not is_admin_request(request):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        wallet_id = int(request.match_info["id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "Invalid wallet ID."}, status=400)
+
+    wallet = await db.get_wallet_by_id_admin(wallet_id)
+    if not wallet:
+        return web.json_response({"error": "Wallet not found."}, status=404)
+
+    try:
+        await db.delete_wallet_admin(wallet_id)
+    except Exception:
+        logger.exception("Administrator wallet deletion failed for wallet_id=%s", wallet_id)
+        return web.json_response({"error": "Unable to remove this wallet. Please try again later."}, status=500)
+
+    logger.info("Administrator removed wallet record id=%s", wallet_id)
+    return web.json_response({"success": True, "message": "Wallet removed."})
+
+
 async def api_admin_get_wallets(request: web.Request) -> web.Response:
     """Paginated list of all wallets across platform with USDT and CELO balances."""
     if not is_admin_request(request):
@@ -2339,6 +2363,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/users/{id}", api_admin_get_user_details)
     app.router.add_delete("/api/admin/users/{id}", api_admin_delete_user)
     app.router.add_get("/api/admin/wallets", api_admin_get_wallets)
+    app.router.add_delete("/api/admin/wallets/{id}", api_admin_delete_wallet)
     app.router.add_get("/api/admin/receiving-wallets", api_admin_get_receiving_wallets)
     app.router.add_post("/api/admin/receiving-wallets", api_admin_add_receiving_wallet)
     app.router.add_patch("/api/admin/receiving-wallets/{id}", api_admin_update_receiving_wallet)
@@ -2348,4 +2373,3 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/funding", api_admin_get_funding)
     app.router.add_get("/api/admin/funding/transactions", api_admin_get_funding_transactions)
     app.router.add_post("/api/admin/settings/pause", api_admin_toggle_pause)
-    app.router.add_post("/api/admin/reset-database", api_admin_reset_database)

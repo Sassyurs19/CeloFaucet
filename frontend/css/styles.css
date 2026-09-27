@@ -2145,7 +2145,11 @@ i[data-lucide], svg.lucide {
 .admin-user-wallet-row > span:first-child { min-width: 0; }
 .admin-user-wallet-row strong, .admin-user-wallet-row small { display: block; }
 .admin-user-wallet-row small { margin-top: 2px; color: var(--text-muted); font-family: monospace; overflow-wrap: anywhere; }
-.admin-user-wallet-row > span:last-child { color: var(--balance-available-dark); font-weight: 700; text-align: right; white-space: nowrap; }
+.admin-user-wallet-balance { color: var(--balance-available-dark); font-weight: 700; text-align: right; white-space: nowrap; }
+.admin-wallet-remove { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid rgba(220, 38, 38, .28); border-radius: 7px; background: #fff; color: var(--danger); font-size: 11px; font-weight: 700; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .15s ease, background .15s ease; }
+.admin-user-wallet-row:hover .admin-wallet-remove,
+.admin-user-wallet-row:focus-within .admin-wallet-remove { opacity: 1; pointer-events: auto; }
+.admin-wallet-remove:hover { background: #fef2f2; }
 .admin-user-wallet-empty { padding: 11px 12px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-color); }
 .admin-user-workspace-wallets > .admin-user-wallet-empty { border-top: 0; }
 .admin-user-actions { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-color); }

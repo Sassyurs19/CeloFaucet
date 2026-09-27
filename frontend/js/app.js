@@ -2724,7 +2724,8 @@ const app = (function () {
       if (loginBox) loginBox.style.display = 'none';
       if (mainBox) mainBox.style.display = 'block';
       loadAdminOverview();
-      switchAdminTab(state.currentAdminTab || 'payments');
+      const allowedTabs = new Set(['payments', 'users', 'funding', 'settings']);
+      switchAdminTab(allowedTabs.has(state.currentAdminTab) ? state.currentAdminTab : 'payments');
     } else {
       if (loginBox) loginBox.style.display = 'block';
       if (mainBox) mainBox.style.display = 'none';
@@ -2777,8 +2778,6 @@ const app = (function () {
     // Load data for specific tab
     if (tabName === 'payments') {
       loadAdminPayments();
-    } else if (tabName === 'wallets') {
-      loadAdminWallets();
     } else if (tabName === 'users') {
       loadAdminUsers();
     } else if (tabName === 'funding') {
@@ -2821,7 +2820,6 @@ const app = (function () {
   function debounceAdminSearch(type) {
     clearTimeout(searchDebounceTimers[type]);
     searchDebounceTimers[type] = setTimeout(() => {
-      if (type === 'wallets') loadAdminWallets();
       if (type === 'payments') loadAdminPayments();
       if (type === 'users') loadAdminUsers();
     }, 300);
@@ -2954,13 +2952,13 @@ const app = (function () {
         const members = wallets.filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
         const workspaceId = Number(workspace.id);
         const walletRows = members.length
-          ? members.map((wallet) => `<div class="admin-user-wallet-row"><span><strong>${escapeHtml(wallet.wallet_name || 'Wallet')}</strong><small>${escapeHtml(wallet.address || '')}</small></span><span>${wallet.usat_balance === null || wallet.usat_balance === undefined ? 'Balance unavailable' : `$${escapeHtml(wallet.usat_balance)} USDT`}</span></div>`).join('')
+          ? members.map((wallet) => `<div class="admin-user-wallet-row"><span><strong>${escapeHtml(wallet.wallet_name || 'Wallet')}</strong><small>${escapeHtml(wallet.address || '')}</small></span><span class="admin-user-wallet-balance">${wallet.usat_balance === null || wallet.usat_balance === undefined ? 'Balance unavailable' : `$${escapeHtml(wallet.usat_balance)} USDT`}</span><button type="button" class="admin-wallet-remove" onclick="app.deleteAdminWallet(${Number(wallet.id)}, ${Number(user.id)})" title="Remove this wallet" aria-label="Remove wallet"><i data-lucide="trash-2" class="icon-xs"></i><span>Remove</span></button></div>`).join('')
           : '<div class="admin-user-wallet-empty">No wallets in this workspace.</div>';
         return `<div class="admin-user-workspace"><button type="button" class="admin-user-workspace-head" onclick="app.toggleAdminWorkspace(${workspaceId})" aria-expanded="false" aria-controls="admin-workspace-wallets-${workspaceId}"><span><strong>${escapeHtml(workspace.name)}</strong><small>${members.length} ${members.length === 1 ? 'wallet' : 'wallets'}</small></span><i data-lucide="chevron-down" class="icon-sm"></i></button><div id="admin-workspace-wallets-${workspaceId}" class="admin-user-workspace-wallets" hidden>${walletRows}</div></div>`;
       }).join('') || '<div class="admin-user-wallet-empty">No workspaces found.</div>';
       if (content) content.innerHTML = `
         <div class="admin-user-summary"><div><span>Workspaces</span><strong>${Number(data.workspace_count || workspaces.length)}</strong></div><div><span>Wallets</span><strong>${wallets.length}</strong></div><div><span>Payments</span><strong>${(data.payments || []).length}</strong></div></div>
-        <p class="description" style="margin:0 0 12px;">Choose a workspace to view every wallet. This view never exposes private keys.</p>
+        <p class="description" style="margin:0 0 12px;">Choose a workspace to view its wallets. Hover a wallet to reveal its Remove control. Private keys are never shown.</p>
         <div class="admin-user-workspaces">${workspaceCards}</div>
         <div class="admin-user-actions"><button type="button" class="btn btn-danger btn-sm" onclick="app.deleteAdminUser(${Number(user.id)})"><i data-lucide="trash-2" class="icon-sm"></i><span>Delete User</span></button></div>`;
       renderIcons();
@@ -2993,71 +2991,16 @@ const app = (function () {
     }
   }
 
-  async function loadAdminWallets() {
-    const container = document.getElementById('admin-wallets-card-list');
-    if (!container) return;
-
-    const searchInput = document.getElementById('admin-wallets-search');
-    const search = searchInput ? searchInput.value.trim() : '';
-
+  async function deleteAdminWallet(walletId, userId) {
+    if (!Number.isInteger(Number(walletId)) || !Number.isInteger(Number(userId))) return;
+    const confirmed = window.confirm('Remove this wallet from this user? This only deletes its saved record and cannot be undone.');
+    if (!confirmed) return;
     try {
-      const data = await apiRequest(`/api/admin/wallets?search=${encodeURIComponent(search)}`);
-      const wallets = data.wallets || [];
-
-      if (wallets.length === 0) {
-        container.innerHTML = `
-          <div class="card" style="text-align:center; padding:32px 16px; color:var(--text-muted);">
-            <i data-lucide="wallet-cards" class="icon-lg" style="margin-bottom:8px;"></i>
-            <div style="font-weight:600; font-size:14px;">No wallets found</div>
-          </div>
-        `;
-        renderIcons();
-        return;
-      }
-
-      let html = '';
-      wallets.forEach((w) => {
-        const typeBadge = w.wallet_type === 'connected'
-          ? '<span class="badge badge-blue">Connected</span>'
-          : '<span class="badge badge-green">Imported</span>';
-
-        html += `
-          <div class="admin-card-item">
-            <div class="admin-card-top">
-              <div>
-                <div style="font-weight:700; font-size:15px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                  <span>${escapeHtml(w.wallet_name)}</span>
-                  ${typeBadge}
-                </div>
-                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                  Owner: <strong style="color:var(--text-secondary);">${escapeHtml(w.user)}</strong> ${w.mobile ? `(${escapeHtml(w.mobile)})` : ''}
-                </div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:16px; font-weight:800; color:var(--celo-green-dark);">$${w.usat_balance || '0.00'} USDT</div>
-                <div style="font-size:11px; color:var(--text-muted);">${w.celo_balance || '0.0000'} CELO</div>
-              </div>
-            </div>
-
-            <div class="admin-card-footer" style="border-top:none; padding-top:4px;">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <span class="code-address">${w.address}</span>
-                <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy Address">
-                  <i data-lucide="copy" class="icon-sm"></i>
-                </button>
-              </div>
-              <div style="font-size:11px; color:var(--text-muted);">
-                Added: ${w.created_at ? new Date(w.created_at).toLocaleDateString() : '-'}
-              </div>
-            </div>
-          </div>
-        `;
-      });
-
-      container.innerHTML = html;
-      renderIcons();
+      await apiRequest(`/api/admin/wallets/${Number(walletId)}`, { method: 'DELETE' });
+      showToast('Wallet removed.', 'success');
+      await Promise.all([openAdminUserDetails(Number(userId)), loadAdminUsers(), loadAdminOverview()]);
     } catch (err) {
-      showToast('Failed to load wallets: ' + err.message, 'error');
+      showToast(err.message || 'Unable to remove this wallet.', 'error');
     }
   }
 
@@ -3325,20 +3268,6 @@ const app = (function () {
     }
   }
 
-  async function adminResetAllData() {
-    try {
-      showToast('Wiping all user accounts and resetting database...', 'info');
-      await apiRequest('/api/admin/reset-database', { method: 'POST' });
-      localStorage.clear();
-      showToast('Database wiped successfully! Reloading fresh dashboard...', 'success');
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
-    } catch (err) {
-      showToast('Reset failed: ' + err.message, 'error');
-    }
-  }
-
   return {
     init,
     configureApiUrl,
@@ -3389,7 +3318,7 @@ const app = (function () {
     deleteAdminUser,
     handleAdminLogin,
     handleAdminTogglePause,
-    adminResetAllData,
+    deleteAdminWallet,
     switchAdminTab,
     debounceAdminSearch,
     openAddReceivingModal,
