@@ -570,11 +570,14 @@ async def api_get_wallets(request: web.Request) -> web.Response:
         logger.exception("Unable to access wallet storage for user ID %s.", user_id)
         return web.json_response({"error": "Wallet storage is temporarily unavailable. Please try again later."}, status=503)
 
+    wallet_read_limit = asyncio.Semaphore(4)
+
     async def fetch_wallet_info(w):
         addr = w["address"]
-        celo_task = celo_client.get_celo_balance(addr)
-        usat_task = celo_client.get_usat_balance(addr)
-        celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
+        async with wallet_read_limit:
+            celo_task = celo_client.get_celo_balance(addr)
+            usat_task = celo_client.get_usat_balance(addr)
+            celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
         u_val = float(usat_bal)
 
         return {

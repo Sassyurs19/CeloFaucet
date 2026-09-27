@@ -1666,6 +1666,12 @@ i[data-lucide], svg.lucide {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
 }
 
+#view-dashboard .pay-flow-connector { display: none; }
+#view-dashboard .pay-capsule,
+#view-dashboard .pay-amount-box { margin-top: 12px; }
+.dashboard-workspace-select { display: flex; flex-direction: column; gap: 6px; }
+.dashboard-wallet-selector-note { margin: 0; color: var(--text-muted); font-size: 11px; font-weight: 600; line-height: 1.4; }
+
 #view-dashboard .pay-connector-badge {
   color: var(--balance-available);
   border-color: #c7d9f5;
@@ -2224,6 +2230,9 @@ i[data-lucide], svg.lucide {
   }
   .mobile-payments-cards-list {
     display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
   }
 
   .payments-page-header {
@@ -2510,6 +2519,10 @@ body.in-auth-mode .container {
   background: rgba(53, 208, 127, 0.12);
   border-color: var(--celo-green);
 }
+
+.wallet-option-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px 5px; color: var(--text-secondary); }
+.wallet-option-group-heading strong { color: var(--text-primary); font-size: 11px; font-weight: 800; }
+.wallet-option-group-heading span { color: var(--text-muted); font-size: 10px; font-weight: 650; text-align: right; }
 
 .wallet-option-info {
   display: flex;

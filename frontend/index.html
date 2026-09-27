@@ -260,7 +260,7 @@
               <div class="pay-capsule-header">
                 <span class="pay-capsule-label">
                   <i data-lucide="wallet" class="icon-xs" style="color:var(--balance-available);"></i>
-                  <span>From Wallet</span>
+                  <span>1. Choose Workspace & Wallet</span>
                 </span>
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-add-wallet" onclick="app.openAddWalletModal()" style="display:none; padding:2px 8px; font-size:11px;">
@@ -271,10 +271,11 @@
               </div>
 
               <div class="dashboard-workspace-select" id="dashboard-workspace-select-container">
-                <label class="form-label" for="select-dashboard-workspace">1. Choose Workspace</label>
+                <label class="form-label" for="select-dashboard-workspace">Workspace</label>
                 <select id="select-dashboard-workspace" class="form-input" onchange="app.selectDashboardWorkspace(this.value)">
                   <option value="">Choose a workspace first</option>
                 </select>
+                <p class="dashboard-wallet-selector-note" id="dashboard-wallet-selector-note">Choose a workspace to view its wallets.</p>
               </div>
 
               <!-- Custom Themed Wallet Selector -->
@@ -282,7 +283,7 @@
                 <div class="wallet-custom-trigger" id="custom-wallet-trigger" onclick="app.toggleWalletDropdownCustom(event)">
                   <div class="wallet-trigger-content">
                     <div class="wallet-trigger-top">
-                      <span class="wallet-trigger-address" id="trigger-wallet-address" style="font-weight:700; font-size:15px; color:var(--text-primary);">Select sending wallet</span>
+                      <span class="wallet-trigger-address" id="trigger-wallet-address" style="font-weight:700; font-size:15px; color:var(--text-primary);">Choose a wallet</span>
                       <span class="badge badge-green" id="trigger-wallet-badge" style="display:none; font-size:9px; padding:1px 6px;">Imported</span>
                     </div>
                     <div class="wallet-trigger-bottom" id="trigger-wallet-subtext" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px;">
@@ -326,7 +327,7 @@
               <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
                 <span class="pay-capsule-label">
                   <i data-lucide="coins" class="icon-xs" style="color:var(--balance-available);"></i>
-                  <span>Enter Amount</span>
+                  <span>2. Amount</span>
                 </span>
                 <div id="amount-validation-hint" style="font-size:12px; color:var(--text-muted); font-weight:600; display:flex; align-items:center; gap:8px;">
                   <span>Available: <strong id="dash-avail-usdt" style="color:var(--text-primary); font-weight:700;">0.00</strong> USAT</span>
@@ -373,7 +374,7 @@
               <div class="pay-capsule-header">
                 <span class="pay-capsule-label">
                   <i data-lucide="send" class="icon-xs" style="color:var(--balance-available);"></i>
-                  <span>To Wallet</span>
+                  <span>3. Recipient</span>
                 </span>
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span id="recipient-format-badge" class="badge badge-green" style="display:none; font-size:10px; padding:1px 5px;"></span>

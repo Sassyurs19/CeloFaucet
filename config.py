@@ -28,6 +28,7 @@ class Config:
     
     # Celo Blockchain settings
     celo_rpc_url: str = "https://forno.celo.org"
+    celo_rpc_fallback_urls: tuple[str, ...] = ()
     celo_chain_id: int = 42220
     network_name: str = "Celo Mainnet"
     
@@ -90,6 +91,14 @@ class Config:
             admin_id = 0
 
         rpc_url = os.getenv("CELO_RPC_URL", "https://forno.celo.org").strip()
+        fallback_rpc_urls = tuple(
+            url.strip().rstrip("/")
+            for url in os.getenv(
+                "CELO_RPC_FALLBACK_URLS",
+                "https://celo.drpc.org,https://rpc.ankr.com/celo",
+            ).split(",")
+            if url.strip().rstrip("/") and url.strip().rstrip("/") != rpc_url.rstrip("/")
+        )
         try:
             chain_id = int(os.getenv("CELO_CHAIN_ID", "42220").strip())
         except ValueError:
@@ -167,6 +176,7 @@ class Config:
             telegram_bot_token=token,
             admin_telegram_id=admin_id,
             celo_rpc_url=rpc_url,
+            celo_rpc_fallback_urls=fallback_rpc_urls,
             celo_chain_id=chain_id,
             network_name=network_name,
             usat_contract_address=usat_contract,

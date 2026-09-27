@@ -1326,6 +1326,7 @@ const app = (function () {
     const customDropdown = document.getElementById('custom-wallet-dropdown');
     const dashboardWorkspaceSelect = document.getElementById('select-dashboard-workspace');
     const customContainer = document.getElementById('custom-wallet-select-container');
+    const selectorNote = document.getElementById('dashboard-wallet-selector-note');
     const workspaceWallets = state.dashboardWorkspaceId
       ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.dashboardWorkspaceId))
       : [];
@@ -1338,6 +1339,14 @@ const app = (function () {
       dashboardWorkspaceSelect.value = state.dashboardWorkspaceId || previous || '';
     }
     if (customContainer) customContainer.style.display = state.dashboardWorkspaceId ? 'block' : 'none';
+
+    const fundedWallets = workspaceWallets.filter((wallet) => Number.parseFloat(wallet.usat_balance || 0) > 0);
+    const emptyWallets = workspaceWallets.filter((wallet) => Number.parseFloat(wallet.usat_balance || 0) <= 0);
+    if (selectorNote) {
+      selectorNote.textContent = state.dashboardWorkspaceId
+        ? `${workspaceWallets.length} wallets in this workspace · ${fundedWallets.length} ready to pay · ${emptyWallets.length} with no USAT`
+        : 'Choose a workspace first. Only wallets in that workspace can be used for this payment.';
+    }
 
     // Hide "+ Add Wallet" button on dashboard if user already has wallets
     if (addWalletBtn) {
@@ -1385,15 +1394,14 @@ const app = (function () {
           </div>
         `;
       } else {
-        let optionsHtml = '';
-        workspaceWallets.forEach((w) => {
+        const renderWalletOption = (w) => {
           const isSelected = String(state.selectedWalletId) === String(w.id);
           const wType = (w.wallet_type || w.type || 'connected').toLowerCase();
           const name = w.name || w.label || 'My Wallet';
           const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
           const celo = parseFloat(w.celo_balance || 0).toFixed(4);
 
-          optionsHtml += `
+          return `
             <div class="wallet-option-item ${isSelected ? 'selected' : ''}" 
                  data-wallet-id="${w.id}" 
                  onclick="app.selectCustomWallet('${w.id}', event)">
@@ -1419,7 +1427,17 @@ const app = (function () {
               </div>
             </div>
           `;
-        });
+        };
+        const groupHeading = (title, detail) => `<div class="wallet-option-group-heading"><strong>${title}</strong><span>${detail}</span></div>`;
+        let optionsHtml = '';
+        if (fundedWallets.length) {
+          optionsHtml += groupHeading('Ready to pay', `${fundedWallets.length} wallet${fundedWallets.length === 1 ? '' : 's'} with USAT`);
+          optionsHtml += fundedWallets.map(renderWalletOption).join('');
+        }
+        if (emptyWallets.length) {
+          optionsHtml += groupHeading(fundedWallets.length ? 'Other wallets' : 'Workspace wallets', 'No USAT available');
+          optionsHtml += emptyWallets.map(renderWalletOption).join('');
+        }
         customDropdown.innerHTML = optionsHtml;
       }
     }

@@ -17,6 +17,8 @@ services:
         value: 3.12.0
       - key: CELO_RPC_URL
         value: https://forno.celo.org
+      - key: CELO_RPC_FALLBACK_URLS
+        value: https://celo.drpc.org,https://rpc.ankr.com/celo
       - key: USAT_CONTRACT_ADDRESS
         value: 0xd2ab3c9a02dbbab236bfec45d1d755df4267f771
       - key: MIN_USER_CELO_THRESHOLD

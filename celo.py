@@ -92,12 +92,20 @@ class CeloClient:
         usat_contract_address: str | None = None,
     ) -> None:
         self.rpc_url = rpc_url or config.celo_rpc_url
+        configured_rpc_urls = (self.rpc_url,) if rpc_url else (
+            config.celo_rpc_url,
+            *config.celo_rpc_fallback_urls,
+        )
+        self._rpc_urls = tuple(dict.fromkeys(url.rstrip("/") for url in configured_rpc_urls if url))
         self.expected_chain_id = expected_chain_id or config.celo_chain_id
         self.usat_address_str = usat_contract_address or config.usat_contract_address
         self._w3 = Web3(Web3.HTTPProvider(self.rpc_url, request_kwargs={"timeout": 15}))
         
         # Lock to serialize nonces when sending funding transactions
         self._funding_lock = asyncio.Lock()
+        self._rpc_switch_lock = asyncio.Lock()
+        self._metadata_lock = asyncio.Lock()
+        self._rpc_read_semaphore = asyncio.Semaphore(8)
 
         # USAT Token metadata (dynamically queried on startup)
         self.usat_decimals: int | None = None
@@ -123,12 +131,9 @@ class CeloClient:
         return self._w3
 
     async def is_connected(self) -> bool:
-        """Check if node responds to RPC ping."""
-        try:
-            return await asyncio.to_thread(self._w3.is_connected)
-        except Exception as e:
-            logger.error("RPC connection check failed: %s", e)
-            return False
+        """Check a configured RPC and use a verified Celo Mainnet fallback if needed."""
+        connected, _ = await self.verify_network()
+        return connected
 
     async def get_chain_id(self) -> int:
         """Retrieve current chain ID from connected RPC."""
@@ -138,54 +143,89 @@ class CeloClient:
         """
         Verify RPC connectivity and assert connected chain ID matches Celo Mainnet (42220).
         """
-        connected = await self.is_connected()
-        if not connected:
-            return False, f"Cannot connect to Celo RPC at {self.rpc_url}"
-
         try:
-            actual_chain_id = await self.get_chain_id()
-            if actual_chain_id != self.expected_chain_id:
-                return (
-                    False,
-                    f"Chain ID mismatch! Expected {self.expected_chain_id} (Celo Mainnet), "
-                    f"but connected node reported {actual_chain_id}.",
-                )
-            return True, f"Connected to Celo Mainnet (Chain ID: {actual_chain_id})"
-        except Exception as e:
-            return False, f"Failed to query chain ID: {e}"
+            async with self._rpc_read_semaphore:
+                connected = await asyncio.to_thread(self._w3.is_connected)
+                actual_chain_id = await self.get_chain_id() if connected else None
+            if connected and actual_chain_id == self.expected_chain_id:
+                return True, f"Connected to Celo Mainnet (Chain ID: {actual_chain_id})"
+        except Exception:
+            pass
+        return await self._switch_to_verified_fallback()
+
+    async def _switch_to_verified_fallback(self, failed_rpc_url: str | None = None) -> tuple[bool, str]:
+        """Switch only to an RPC endpoint that proves it is Celo Mainnet."""
+        async with self._rpc_switch_lock:
+            if failed_rpc_url and self.rpc_url != failed_rpc_url:
+                return True, "A concurrent request already switched to a verified Celo Mainnet RPC."
+            for url in self._rpc_urls:
+                if url == self.rpc_url:
+                    continue
+                candidate = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": 15}))
+                try:
+                    async with self._rpc_read_semaphore:
+                        connected = await asyncio.to_thread(candidate.is_connected)
+                        chain_id = await asyncio.to_thread(lambda: candidate.eth.chain_id) if connected else None
+                    if not connected or chain_id != self.expected_chain_id:
+                        continue
+                except Exception:
+                    continue
+                self.rpc_url = url
+                self._w3 = candidate
+                self._usat_contract = None
+                self._init_contract_instance()
+                logger.warning("Switched to a verified Celo Mainnet RPC fallback.")
+                return True, f"Connected to Celo Mainnet (Chain ID: {chain_id})"
+        return False, "No configured Celo Mainnet RPC endpoint is currently available."
+
+    async def _read_with_fallback(self, operation):
+        """Read once, then retry only after a verified RPC failover."""
+        failed_rpc_url = self.rpc_url
+        try:
+            async with self._rpc_read_semaphore:
+                return await asyncio.to_thread(operation)
+        except Exception as first_error:
+            switched, _ = await self._switch_to_verified_fallback(failed_rpc_url)
+            if not switched:
+                raise first_error
+            async with self._rpc_read_semaphore:
+                return await asyncio.to_thread(operation)
 
     async def init_usat_metadata(self) -> tuple[bool, str]:
         """
         Query the USAT contract directly from Celo Mainnet to verify decimals, symbol, and name.
         Does not assume metadata.
         """
-        if not self._usat_contract:
-            self._init_contract_instance()
-        if not self._usat_contract:
-            return False, "USAT contract not initialized."
+        async with self._metadata_lock:
+            if self._metadata_verified:
+                return True, f"{self.usat_symbol} ({self.usat_decimals} decimals)"
+            if not self._usat_contract:
+                self._init_contract_instance()
+            if not self._usat_contract:
+                return False, "USAT contract not initialized."
 
-        try:
-            decimals = await asyncio.to_thread(self._usat_contract.functions.decimals().call)
-            symbol = await asyncio.to_thread(self._usat_contract.functions.symbol().call)
-            name = await asyncio.to_thread(self._usat_contract.functions.name().call)
+            try:
+                decimals = await self._read_with_fallback(lambda: self._usat_contract.functions.decimals().call())
+                symbol = await self._read_with_fallback(lambda: self._usat_contract.functions.symbol().call())
+                name = await self._read_with_fallback(lambda: self._usat_contract.functions.name().call())
 
-            self.usat_decimals = int(decimals)
-            self.usat_symbol = str(symbol)
-            self.usat_name = str(name)
-            self._metadata_verified = True
-            
-            logger.info(
-                "USAT Token Verified: %s (%s), Decimals: %d, Contract: %s",
-                self.usat_name,
-                self.usat_symbol,
-                self.usat_decimals,
-                self.usat_address_str,
-            )
-            return True, f"{self.usat_symbol} ({self.usat_decimals} decimals)"
-        except Exception as e:
-            self._metadata_verified = False
-            logger.warning("Could not query token contract metadata.")
-            return False, "Token contract metadata is temporarily unavailable."
+                self.usat_decimals = int(decimals)
+                self.usat_symbol = str(symbol)
+                self.usat_name = str(name)
+                self._metadata_verified = True
+
+                logger.info(
+                    "USAT Token Verified: %s (%s), Decimals: %d, Contract: %s",
+                    self.usat_name,
+                    self.usat_symbol,
+                    self.usat_decimals,
+                    self.usat_address_str,
+                )
+                return True, f"{self.usat_symbol} ({self.usat_decimals} decimals)"
+            except Exception:
+                self._metadata_verified = False
+                logger.warning("Could not query token contract metadata.")
+                return False, "Token contract metadata is temporarily unavailable."
 
     def get_payment_amount_base_units(self) -> int:
         """
@@ -213,7 +253,7 @@ class CeloClient:
         """Retrieve CELO native gas token balance for an address in standard unit (CELO)."""
         try:
             checksum_addr = Web3.to_checksum_address(address)
-            balance_wei = await asyncio.to_thread(self._w3.eth.get_balance, checksum_addr)
+            balance_wei = await self._read_with_fallback(lambda: self._w3.eth.get_balance(checksum_addr))
             return float(self._w3.from_wei(balance_wei, "ether"))
         except Exception as e:
             logger.warning("CELO balance query failed for %s", address)
@@ -223,7 +263,7 @@ class CeloClient:
         """Retrieve a native CELO balance in exact wei without rounding."""
         try:
             checksum_addr = Web3.to_checksum_address(address)
-            return int(await asyncio.to_thread(self._w3.eth.get_balance, checksum_addr))
+            return int(await self._read_with_fallback(lambda: self._w3.eth.get_balance(checksum_addr)))
         except Exception as exc:
             logger.warning("Exact CELO balance query failed for %s", address)
             raise BlockchainUnavailableError("Blockchain data is temporarily unavailable.") from exc
@@ -242,8 +282,8 @@ class CeloClient:
             checksum_addr = Web3.to_checksum_address(address)
             if not self._usat_contract:
                 self._init_contract_instance()
-            balance_raw = await asyncio.to_thread(
-                self._usat_contract.functions.balanceOf(checksum_addr).call
+            balance_raw = await self._read_with_fallback(
+                lambda: self._usat_contract.functions.balanceOf(checksum_addr).call()
             )
             base_units = int(balance_raw)
             return base_units, self.format_usat(base_units)
