@@ -2365,9 +2365,33 @@ const app = (function () {
     const prefix = /^personal workspace$/i.test(workspaceName) || !workspaceName
       ? 'Wallet '
       : `${workspaceName.replace(/\s+/g, '')}`;
+    const workspaceWalletNames = (state.wallets || [])
+      .filter((wallet) => String(wallet.workspace_id) === String(workspaceId))
+      .map((wallet) => String(wallet.wallet_name || wallet.name || wallet.label || '').trim())
+      .filter(Boolean);
+
+    // A user can begin a workspace with a letter sequence such as "Wallet A" or
+    // "CC A". Continue that exact prefix instead of switching it back to numbers.
+    const letterPattern = /^(.*\s)([A-Za-z])(\d*)$/;
+    const letterSeed = workspaceWalletNames.map((name) => ({ name, match: letterPattern.exec(name) }))
+      .find(({ match }) => match);
+    if (letterSeed) {
+      const letterPrefix = letterSeed.match[1];
+      const sequenceValues = workspaceWalletNames.reduce((values, name) => {
+        const match = letterPattern.exec(name);
+        if (!match || match[1].toLowerCase() !== letterPrefix.toLowerCase()) return values;
+        const cycle = match[3] ? Number(match[3]) : 0;
+        values.push((cycle * 26) + (match[2].toUpperCase().charCodeAt(0) - 65));
+        return values;
+      }, []);
+      const nextValue = Math.max(...sequenceValues, -1) + 1;
+      const nextLetter = String.fromCharCode(65 + (nextValue % 26));
+      const nextCycle = Math.floor(nextValue / 26);
+      return `${letterPrefix}${nextLetter}${nextCycle || ''}`;
+    }
+
     const expression = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+)?(\\d+)$`, 'i');
-    const highestNumber = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspaceId)).reduce((highest, wallet) => {
-      const name = wallet.wallet_name || wallet.name || wallet.label || '';
+    const highestNumber = workspaceWalletNames.reduce((highest, name) => {
       const match = expression.exec(name.trim());
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
