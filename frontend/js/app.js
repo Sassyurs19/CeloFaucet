@@ -1326,7 +1326,6 @@ const app = (function () {
     const customDropdown = document.getElementById('custom-wallet-dropdown');
     const dashboardWorkspaceSelect = document.getElementById('select-dashboard-workspace');
     const customContainer = document.getElementById('custom-wallet-select-container');
-    const selectorNote = document.getElementById('dashboard-wallet-selector-note');
     const workspaceWallets = state.dashboardWorkspaceId
       ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.dashboardWorkspaceId))
       : [];
@@ -1342,12 +1341,6 @@ const app = (function () {
 
     const fundedWallets = workspaceWallets.filter((wallet) => Number.parseFloat(wallet.usat_balance || 0) > 0);
     const emptyWallets = workspaceWallets.filter((wallet) => Number.parseFloat(wallet.usat_balance || 0) <= 0);
-    if (selectorNote) {
-      selectorNote.textContent = state.dashboardWorkspaceId
-        ? `${workspaceWallets.length} wallets in this workspace · ${fundedWallets.length} ready to pay · ${emptyWallets.length} with no USAT`
-        : 'Choose a workspace first. Only wallets in that workspace can be used for this payment.';
-    }
-
     // Hide "+ Add Wallet" button on dashboard if user already has wallets
     if (addWalletBtn) {
       addWalletBtn.style.display = state.dashboardWorkspaceId && workspaceWallets.length === 0 ? 'inline-flex' : 'none';

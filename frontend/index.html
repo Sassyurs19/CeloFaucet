@@ -275,7 +275,6 @@
                 <select id="select-dashboard-workspace" class="form-input" onchange="app.selectDashboardWorkspace(this.value)">
                   <option value="">Choose a workspace first</option>
                 </select>
-                <p class="dashboard-wallet-selector-note" id="dashboard-wallet-selector-note">Choose a workspace to view its wallets.</p>
               </div>
 
               <!-- Custom Themed Wallet Selector -->
@@ -312,13 +311,6 @@
                 <select id="select-send-wallet" style="display:none;" onchange="app.handleWalletSelected()">
                   <option value="">-- Select sending wallet --</option>
                 </select>
-              </div>
-            </div>
-
-            <!-- Flow Connector 1 -->
-            <div class="pay-flow-connector">
-              <div class="pay-connector-badge" title="Transfer flow">
-                <i data-lucide="arrow-down" class="icon-xs"></i>
               </div>
             </div>
 
@@ -359,13 +351,6 @@
                 <button type="button" class="btn-preset-chip" onclick="app.setAmountPercent(50)">50%</button>
                 <button type="button" class="btn-preset-chip" onclick="app.setAmountPercent(75)">75%</button>
                 <button type="button" class="btn-preset-chip max-chip" onclick="app.setAmountPercent(100)">MAX</button>
-              </div>
-            </div>
-
-            <!-- Flow Connector 2 -->
-            <div class="pay-flow-connector">
-              <div class="pay-connector-badge" title="To destination">
-                <i data-lucide="arrow-down" class="icon-xs"></i>
               </div>
             </div>
 
