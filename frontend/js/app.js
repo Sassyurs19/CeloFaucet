@@ -1393,9 +1393,11 @@ const app = (function () {
           const name = w.name || w.label || 'My Wallet';
           const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
           const celo = parseFloat(w.celo_balance || 0).toFixed(4);
+          const hasUsat = Number.parseFloat(w.usat_balance || 0) > 0;
+          const balanceState = hasUsat ? 'wallet-option-available' : 'wallet-option-unavailable';
 
           return `
-            <div class="wallet-option-item ${isSelected ? 'selected' : ''}" 
+            <div class="wallet-option-item ${balanceState} ${isSelected ? 'selected' : ''}"
                  data-wallet-id="${w.id}" 
                  onclick="app.selectCustomWallet('${w.id}', event)">
               <div class="wallet-option-info">
@@ -1408,7 +1410,7 @@ const app = (function () {
                 <div class="wallet-option-bottom">
                   <span class="code-address" style="font-size:11px;">${formatShortAddress(w.address)}</span>
                   <span style="color:var(--text-muted);">•</span>
-                  <span style="color:var(--celo-green-dark); font-weight:600; display:inline-flex; align-items:center; gap:2px;">
+                  <span class="wallet-option-gas" style="font-weight:600; display:inline-flex; align-items:center; gap:2px;">
                     <i data-lucide="fuel" class="icon-xs"></i> ${celo} CELO
                   </span>
                   <span style="color:var(--text-muted);">•</span>
@@ -1501,6 +1503,7 @@ const app = (function () {
     if (triggerName) triggerName.textContent = shortAddr;
     if (triggerGas) {
       triggerGas.style.display = 'inline-flex';
+      triggerGas.classList.toggle('is-funded', usat > 0);
       if (triggerGasText) triggerGasText.textContent = `${celo.toFixed(4)} CELO Gas • $${usat.toFixed(2)} USAT`;
     }
 

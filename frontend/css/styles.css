@@ -1690,8 +1690,8 @@ i[data-lucide], svg.lucide {
   color: var(--balance-available-dark);
 }
 
-#view-dashboard .wallet-trigger-gas,
-#view-dashboard .wallet-option-balance { color: var(--balance-available-dark) !important; }
+#view-dashboard .wallet-trigger-gas.is-funded { color: var(--balance-available-dark) !important; }
+#view-dashboard .wallet-trigger-gas:not(.is-funded) { color: var(--text-muted) !important; background: var(--bg-subtle); }
 
 #view-dashboard .badge-green {
   background: var(--balance-available-subtle);
@@ -2508,15 +2508,12 @@ body.in-auth-mode .container {
   margin-bottom: 0;
 }
 
-.wallet-option-item:hover {
-  background: rgba(53, 208, 127, 0.08);
-  border-color: rgba(53, 208, 127, 0.2);
-}
-
-.wallet-option-item.selected {
-  background: rgba(53, 208, 127, 0.12);
-  border-color: var(--celo-green);
-}
+.wallet-option-item.wallet-option-available { background: #fbfdff; border-color: #dbe7f8; }
+.wallet-option-item.wallet-option-unavailable { background: #fcfcfd; border-color: #edf0f4; }
+.wallet-option-item.wallet-option-available:hover { background: #f3f8ff; border-color: #b8d1f5; }
+.wallet-option-item.wallet-option-unavailable:hover { background: #f8fafc; border-color: #d8dee8; }
+.wallet-option-item.wallet-option-available.selected { background: var(--balance-available-subtle); border-color: var(--balance-available); }
+.wallet-option-item.wallet-option-unavailable.selected { background: #f4f6f8; border-color: #aeb8c7; }
 
 .wallet-option-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px 5px; color: var(--text-secondary); }
 .wallet-option-group-heading strong { color: var(--text-primary); font-size: 11px; font-weight: 800; }
@@ -2551,7 +2548,13 @@ body.in-auth-mode .container {
 
 .wallet-option-balance {
   font-weight: 700;
-  color: var(--celo-green-dark);
+}
+.wallet-option-available .wallet-option-gas,
+.wallet-option-available .wallet-option-balance,
+.wallet-option-available.selected .wallet-option-check { color: var(--balance-available-dark); }
+.wallet-option-unavailable .wallet-option-gas,
+.wallet-option-unavailable .wallet-option-balance,
+.wallet-option-unavailable.selected .wallet-option-check { color: var(--text-muted); }
 }
 
 .wallet-option-check {
