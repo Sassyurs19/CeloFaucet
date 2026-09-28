@@ -1525,7 +1525,13 @@ async def api_create_payment(request: web.Request) -> web.Response:
                     payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err_desc
                 )
                 return web.json_response(
-                    {"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202
+                    {
+                        "success": False,
+                        "status": "CONFIRMING",
+                        "payment_id": payment_id,
+                        "tx_hash": tx_hash,
+                        "explorer_url": f"{config.explorer_tx_url}{tx_hash}" if tx_hash else None,
+                    }, status=202
                 )
 
             is_insufficient_gas = any(phrase in err_lower for phrase in (
@@ -1605,7 +1611,13 @@ async def api_create_payment(request: web.Request) -> web.Response:
             })
         if err_desc == "Transaction status is pending reconciliation.":
             await db.update_usat_payment_status(payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err_desc)
-            return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
+            return web.json_response({
+                "success": False,
+                "status": "CONFIRMING",
+                "payment_id": payment_id,
+                "tx_hash": tx_hash,
+                "explorer_url": f"{config.explorer_tx_url}{tx_hash}" if tx_hash else None,
+            }, status=202)
         else:
             if tx_hash:
                 await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=err_desc)
