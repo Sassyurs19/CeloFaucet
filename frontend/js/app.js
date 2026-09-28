@@ -2122,6 +2122,13 @@ const app = (function () {
           setPaymentFailed('The transaction was reverted on Celo. No USDT was transferred.');
           return;
         }
+        if (status === 'GAS_READY') {
+          state.activePayment = null;
+          closeModal('modal-payment-progress');
+          await loadWallets();
+          showToast('CELO gas was confirmed. Your USDT transfer was not submitted; please review and pay again.', 'info');
+          return;
+        }
         paymentConfirmationTimer = setTimeout(checkStatus, 3000);
       } catch (err) {
         // The browser keeps the payment protected; the next check reconciles it.

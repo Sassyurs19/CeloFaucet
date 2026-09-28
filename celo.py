@@ -356,10 +356,15 @@ class CeloClient:
                     return False, tx_hash, "Transaction status is pending reconciliation."
                 logger.info("Broadcast %.6f CELO funding to %s: %s (nonce=%d)", amount_celo, to_chk, tx_hash, nonce)
 
-            # Wait for receipt
-            receipt = await asyncio.to_thread(
-                self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
-            )
+            # Do not hold the web request open for a long RPC wait.  Once a
+            # transaction hash exists, the API reconciles it from its receipt
+            # before allowing a payment to proceed or show success.
+            try:
+                receipt = await asyncio.to_thread(
+                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=20
+                )
+            except Exception:
+                return False, tx_hash, "Transaction status is pending reconciliation."
             if receipt.get("status") == 1:
                 logger.info("%.6f CELO funding confirmed for %s: %s", amount_celo, to_chk, tx_hash)
                 return True, tx_hash, ""
@@ -513,7 +518,7 @@ class CeloClient:
             # payment screen as soon as the chain settles the transfer.
             try:
                 receipt = await asyncio.to_thread(
-                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90
+                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=20
                 )
             except Exception:
                 return False, tx_hash, 0, "Transaction status is pending reconciliation."
@@ -573,6 +578,25 @@ class CeloClient:
             return False, block_num, "Transaction reverted on blockchain."
         except Exception as e:
             return False, 0, "Transaction status is pending reconciliation."
+
+    async def get_transaction_receipt_outcome(self, tx_hash: str) -> Optional[bool]:
+        """Return a mined transaction's outcome, or ``None`` while it is unknown.
+
+        This is used only for the server-created CELO gas top-up.  It never
+        treats a missing receipt or an RPC failure as a successful transaction.
+        """
+        try:
+            connected, _ = await self.verify_network()
+            if not connected:
+                return None
+            receipt = await self._read_with_fallback(
+                lambda: self._w3.eth.get_transaction_receipt(tx_hash)
+            )
+            if not receipt:
+                return None
+            return receipt.get("status") == 1
+        except Exception:
+            return None
 
     async def verify_usat_transfer_receipt(
         self, tx_hash: str, from_address: str, to_address: str, amount_base_units: int

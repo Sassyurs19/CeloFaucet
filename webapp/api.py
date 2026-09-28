@@ -1569,11 +1569,30 @@ async def api_create_payment(request: web.Request) -> web.Response:
         decrypted_pk = None
 
         if success:
+            # A successful receipt alone is not enough.  Confirm that this is
+            # the exact USAT Transfer requested by this user before exposing a
+            # completed payment to the client.
+            receipt_ok, verified_block, verification_error = await celo_client.verify_usat_transfer_receipt(
+                tx_hash, source_addr, dest_addr, required_units
+            )
+            if not receipt_ok:
+                if verification_error == "Transaction status is pending reconciliation.":
+                    await db.update_usat_payment_status(
+                        payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=verification_error
+                    )
+                    return web.json_response(
+                        {"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202
+                    )
+                await db.update_usat_payment_status(
+                    payment_id, "FAILED", tx_hash=tx_hash, error_message=verification_error
+                )
+                return web.json_response({"error": "Transaction could not be verified on Celo."}, status=400)
+
             await db.update_usat_payment_status(
                 payment_id=payment_id,
                 status="SUCCESS",
                 tx_hash=tx_hash,
-                block_number=block_num,
+                block_number=verified_block,
             )
             await db.update_wallet_last_used(source_wallet_id)
             payment_obj = {
@@ -1581,7 +1600,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
                 "payment_id": payment_id,
                 "status": "CONFIRMED",
                 "tx_hash": tx_hash,
-                "block_number": block_num,
+                "block_number": verified_block,
                 "amount": f"{amount_val:.2f}",
                 "token": "USDT",
                 "from_address": source_addr,
@@ -1594,7 +1613,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
                 "status": "CONFIRMED",
                 "payment_id": payment_id,
                 "tx_hash": tx_hash,
-                "block_number": block_num,
+                "block_number": verified_block,
                 "amount": f"{amount_val:.2f}",
                 "token": "USDT",
                 "from_address": source_addr,
@@ -1765,6 +1784,31 @@ async def api_get_payment_status(request: web.Request) -> web.Response:
 
     if payment.get("tx_hash") and str(payment.get("status", "")).upper() not in ("SUCCESS", "CONFIRMED"):
         payment = await reconcile_broadcast_payment(payment)
+    elif (
+        payment.get("celo_fund_tx_hash")
+        and not payment.get("tx_hash")
+        and str(payment.get("status", "")).upper() == "CONFIRMING"
+    ):
+        # The funding transaction was broadcast but the request did not receive
+        # its receipt in time.  Reconcile it separately: no USAT transfer has
+        # been broadcast, so this payment can never be presented as successful.
+        funding_outcome = await celo_client.get_transaction_receipt_outcome(
+            payment["celo_fund_tx_hash"]
+        )
+        if funding_outcome is True:
+            await db.update_usat_payment_status(
+                payment_id,
+                "GAS_READY",
+                error_message="CELO gas funding confirmed; USAT transfer was not submitted.",
+            )
+            payment = await db.get_usat_payment_by_id(payment_id) or payment
+        elif funding_outcome is False:
+            await db.update_usat_payment_status(
+                payment_id,
+                "FAILED",
+                error_message="CELO gas funding transaction reverted on Celo.",
+            )
+            payment = await db.get_usat_payment_by_id(payment_id) or payment
 
     status = str(payment.get("status") or "").upper()
     return web.json_response({

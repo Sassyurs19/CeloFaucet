@@ -1467,11 +1467,11 @@ class Database:
                 return dict(row) if row else None
 
     async def get_reconcilable_usat_payments(self, user_identifier: int) -> list[dict[str, Any]]:
-        """Return broadcast payment records that must be checked against Celo.
+        """Return active broadcast payment records that must be checked against Celo.
 
-        A previously cancelled record is included deliberately: older client
-        versions could cancel a record after a broadcast timeout, even though the
-        chain transaction could subsequently succeed.
+        Terminal records are intentionally excluded.  A cancelled or failed
+        historical record must never be revived into an active payment merely
+        because the user starts a new transfer.
         """
         user_ids = await self._resolve_user_identifiers(user_identifier)
         if not user_ids:
@@ -1483,7 +1483,7 @@ class Database:
                 SELECT * FROM usat_payments
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
                   AND tx_hash IS NOT NULL
-                  AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED')
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'CONFIRMING')
                 ORDER BY created_at ASC;
                 """,
                 user_ids + user_ids,
