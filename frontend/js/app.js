@@ -2198,6 +2198,7 @@ const app = (function () {
 
     sortedWallets.forEach((w) => {
       const isConnected = w.wallet_type === 'connected';
+      const isImported = !isConnected;
       const badgeClass = isConnected ? 'badge-blue' : 'badge-green';
       const typeLabel = isConnected ? 'Connected' : 'Imported';
       const walletName = escapeHtml(w.name || w.label || 'My Wallet');
@@ -2206,18 +2207,18 @@ const app = (function () {
       const celo = balanceAvailable ? parseFloat(w.celo_balance).toFixed(4) : 'Unavailable';
       const isSelected = state.selectedWalletId === w.id;
       const isExpanded = String(state.expandedWalletId) === String(w.id);
+      const detailsLabel = isImported ? 'Details & key' : 'Details';
 
       html += `
-        <div class="wallet-card ${isSelected ? 'active-wallet' : ''} ${isExpanded ? 'wallet-card-expanded' : ''}">
-          <button type="button" class="wallet-card-summary" data-wallet-expand="${w.id}" aria-expanded="${isExpanded}" title="${isExpanded ? 'Hide wallet details' : 'Show wallet details'}">
+        <details class="wallet-card ${isSelected ? 'active-wallet' : ''} ${isExpanded ? 'wallet-card-expanded' : ''}" ${isExpanded ? 'open' : ''}>
+          <summary class="wallet-card-summary" title="Show wallet details">
             <span style="min-width:0;">
               <span class="wallet-card-title" title="${walletName}">${walletName}</span>
               <span class="wallet-card-subtitle">${isSelected ? 'Selected for payment' : typeLabel}</span>
             </span>
             <span class="wallet-summary-balance ${balanceAvailable && Number(usdt) > 0 ? 'balance-positive' : 'balance-zero'}">${balanceAvailable ? `$${usdt}` : usdt}<small>${balanceAvailable ? 'USDT' : ''}</small></span>
-            <span class="wallet-expand-label">${isExpanded ? 'Hide' : 'View'}</span><i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
-          </button>
-          ${isExpanded ? `
+            <span class="wallet-expand-label">${detailsLabel}</span><i data-lucide="chevron-down" class="icon-sm wallet-expand-icon"></i>
+          </summary>
             <div class="wallet-card-details">
               <div class="wallet-address-row">
                 <span class="code-address">${formatShortAddress(w.address)}</span>
@@ -2232,18 +2233,12 @@ const app = (function () {
                 ${isImported ? `<button class="btn btn-secondary btn-sm" onclick="app.openExportWalletModal(${w.id})"><i data-lucide="key-round" class="icon-xs"></i> Export Key</button>` : ''}
                 <button class="btn btn-danger btn-sm" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-xs"></i> Remove</button>
               </div>
-            </div>` : ''}
-        </div>
+            </div>
+        </details>
       `;
     });
 
     container.innerHTML = html;
-    container.onclick = (event) => {
-      const trigger = event.target.closest('[data-wallet-expand]');
-      if (!trigger || !container.contains(trigger)) return;
-      event.preventDefault();
-      toggleWalletDetails(trigger.dataset.walletExpand);
-    };
     renderIcons();
   }
 

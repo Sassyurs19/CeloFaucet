@@ -990,7 +990,11 @@ i[data-lucide], svg.lucide {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  list-style: none;
 }
+.wallet-card-summary::-webkit-details-marker { display: none; }
+.wallet-card[open] .wallet-expand-icon { transform: rotate(180deg); }
+.wallet-card[open] .wallet-card-summary { margin-bottom: 0; }
 
 .wallet-card-subtitle {
   display: block;
