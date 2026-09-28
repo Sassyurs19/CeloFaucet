@@ -2004,13 +2004,27 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
             "payment_id": payment.get("payment_id") or str(payment.get("id")),
         })
 
-    # Once either hash exists, the blockchain may still settle it.  Refuse to
-    # unlock it rather than allowing a second transfer to be created.
-    if payment.get("tx_hash") or payment.get("celo_fund_tx_hash"):
-        if payment.get("tx_hash"):
-            payment = await reconcile_broadcast_payment(payment)
+    # A USAT transaction hash can still settle on-chain, so it must stay
+    # locked.  A CELO gas top-up alone is different: it never sends USAT and
+    # can be reconciled to safely release this abandoned payment request.
+    if payment.get("tx_hash"):
+        payment = await reconcile_broadcast_payment(payment)
         return web.json_response({
-            "error": "This payment was submitted to Celo and cannot be unlocked until its receipt is resolved."
+            "error": "This USAT payment was submitted to Celo and cannot be unlocked until its receipt is resolved."
+        }, status=409)
+
+    if payment.get("celo_fund_tx_hash"):
+        payment = await reconcile_pending_gas_funding(payment)
+        resolved_status = str(payment.get("status") or "").upper()
+        if resolved_status in {"GAS_READY", "FAILED"}:
+            return web.json_response({
+                "success": True,
+                "status": "UNLOCKED",
+                "payment_id": payment.get("payment_id") or payment_id,
+                "message": "The gas top-up was resolved. No USAT transfer was sent; you can pay again.",
+            })
+        return web.json_response({
+            "error": "The gas top-up is still awaiting its Celo receipt. No USAT transfer was sent. Please try again shortly."
         }, status=409)
 
     # Proceed with cancellation
