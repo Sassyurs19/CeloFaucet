@@ -2162,13 +2162,9 @@ const app = (function () {
     const visibleWallets = state.activeWorkspaceId
       ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.activeWorkspaceId))
       : state.wallets;
-    const balancesUnavailable = visibleWallets.some((wallet) => !hasLiveWalletBalance(wallet));
     const workspaceBalance = visibleWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
-    const summaryAmount = document.getElementById('wallets-summary-usdt');
     const summaryCount = document.getElementById('wallets-summary-count');
-    if (summaryAmount) summaryAmount.textContent = balancesUnavailable ? 'Balance unavailable' : `$${workspaceBalance.toFixed(2)}`;
     if (summaryCount) summaryCount.textContent = visibleWallets.length;
-    setBalanceTone(summaryAmount, balancesUnavailable ? null : workspaceBalance);
 
     if (!state.activeWorkspaceId) {
       container.innerHTML = '';
@@ -2213,13 +2209,13 @@ const app = (function () {
 
       html += `
         <div class="wallet-card ${isSelected ? 'active-wallet' : ''} ${isExpanded ? 'wallet-card-expanded' : ''}">
-          <button type="button" class="wallet-card-summary" onclick="app.toggleWalletDetails(${w.id})" aria-expanded="${isExpanded}" title="Show wallet details">
+          <button type="button" class="wallet-card-summary" data-wallet-expand="${w.id}" aria-expanded="${isExpanded}" title="${isExpanded ? 'Hide wallet details' : 'Show wallet details'}">
             <span style="min-width:0;">
               <span class="wallet-card-title" title="${walletName}">${walletName}</span>
               <span class="wallet-card-subtitle">${isSelected ? 'Selected for payment' : typeLabel}</span>
             </span>
             <span class="wallet-summary-balance ${balanceAvailable && Number(usdt) > 0 ? 'balance-positive' : 'balance-zero'}">${balanceAvailable ? `$${usdt}` : usdt}<small>${balanceAvailable ? 'USDT' : ''}</small></span>
-            <i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
+            <span class="wallet-expand-label">${isExpanded ? 'Hide' : 'View'}</span><i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
           </button>
           ${isExpanded ? `
             <div class="wallet-card-details">
@@ -2242,6 +2238,12 @@ const app = (function () {
     });
 
     container.innerHTML = html;
+    container.onclick = (event) => {
+      const trigger = event.target.closest('[data-wallet-expand]');
+      if (!trigger || !container.contains(trigger)) return;
+      event.preventDefault();
+      toggleWalletDetails(trigger.dataset.walletExpand);
+    };
     renderIcons();
   }
 
