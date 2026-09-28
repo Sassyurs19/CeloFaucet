@@ -1885,6 +1885,10 @@ const app = (function () {
         showPaymentConfirming(pendingPaymentId, wallet, recipient, amount);
         return;
       }
+      if (err.status === 409 && err.response?.can_unlock && pendingPaymentId) {
+        showPaymentUnlockRequired(pendingPaymentId);
+        return;
+      }
       const errMsg = (err.message || '').toLowerCase();
       if (errMsg.includes('gas') || errMsg.includes('celo')) {
         showToast('CELO gas could not be added automatically. No payment was sent; please try again later.', 'warning');
@@ -2111,6 +2115,35 @@ const app = (function () {
 
     renderIcons();
     showToast(`Payment error: ${errorMsg}`, 'error');
+  }
+
+  function showPaymentUnlockRequired(paymentId) {
+    const iconCont = document.getElementById('pay-progress-icon-container');
+    const titleEl = document.getElementById('pay-progress-title');
+    const descEl = document.getElementById('pay-progress-desc');
+    const actionBtn = document.getElementById('btn-pay-modal-action');
+    const closeBtn = document.getElementById('btn-close-pay-modal');
+    if (iconCont) iconCont.innerHTML = '<i data-lucide="unlock" class="icon-lg" style="color:var(--accent-blue);"></i>';
+    if (titleEl) titleEl.textContent = 'Payment needs unlocking';
+    if (descEl) descEl.textContent = 'An earlier wallet-signature request was not sent to Celo. Unlock it to try again.';
+    if (actionBtn) {
+      actionBtn.style.display = 'block';
+      actionBtn.textContent = 'Unlock payment';
+      actionBtn.onclick = async () => {
+        actionBtn.disabled = true;
+        try {
+          await apiRequest(`/api/payments/${encodeURIComponent(paymentId)}/cancel`, { method: 'POST' });
+          closeModal('modal-payment-progress');
+          await Promise.all([loadPaymentsHistory(), loadWallets()]);
+          showToast('Payment unlocked. You can try again now.', 'success');
+        } catch (unlockError) {
+          actionBtn.disabled = false;
+          showToast(unlockError.message || 'This payment cannot be unlocked yet.', 'warning');
+        }
+      };
+    }
+    if (closeBtn) closeBtn.style.display = 'block';
+    renderIcons();
   }
 
   function showPaymentConfirming(paymentId, wallet, recipient, amount) {

@@ -1458,6 +1458,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "error": "A wallet signature request is still open. Complete or dismiss it before starting another payment.",
             "payment_id": active["payment_id"],
             "status": active_status,
+            "can_unlock": not active.get("celo_fund_tx_hash"),
         }, status=409)
 
     source_addr = Web3.to_checksum_address(source_wallet["address"])
