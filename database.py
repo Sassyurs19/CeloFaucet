@@ -324,6 +324,21 @@ class Database:
                 WHERE workspace_id IS NULL AND user_id IS NOT NULL;
                 """
             )
+            # Imported-wallet processing records with no transaction hash cannot
+            # have reached Celo after this long; release the stale local intent.
+            await conn.execute(
+                f"""
+                UPDATE usat_payments
+                SET status = 'EXPIRED',
+                    error_message = 'Transfer was not submitted',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING')
+                  AND tx_hash IS NULL
+                  AND created_at < datetime('now', '-15 minutes');
+                """,
+                user_ids + user_ids,
+            )
             await conn.commit()
 
             # 5. Legacy faucet claims table (preserved for backwards compatibility)
@@ -1398,6 +1413,15 @@ class Database:
             )
             await conn.commit()
 
+    async def delete_unsubmitted_usat_payment(self, payment_id: str) -> None:
+        """Remove an intent only when no USAT transaction was ever broadcast."""
+        async with self.connect() as conn:
+            await conn.execute(
+                "DELETE FROM usat_payments WHERE payment_id = ? AND tx_hash IS NULL;",
+                (payment_id,),
+            )
+            await conn.commit()
+
     async def _resolve_user_identifiers(self, user_identifier: int) -> list[int]:
         """Resolve all potential IDs (users.id, users.telegram_id) for a given identifier."""
         try:
@@ -1427,15 +1451,17 @@ class Database:
             return None
         placeholders = ",".join("?" * len(user_ids))
         async with self.connect() as conn:
-            # Auto-expire stale unmined payments older than 15 minutes to prevent permanent locks
+            # An abandoned browser-signature prompt has no transaction hash and can
+            # safely expire.  Never cancel a server/broadcast payment here: an RPC
+            # timeout can still result in an on-chain confirmation.
             await conn.execute(
                 f"""
                 UPDATE usat_payments
-                SET status = 'CANCELLED',
-                    error_message = 'Auto-expired due to inactivity',
+                SET status = 'EXPIRED',
+                    error_message = 'Signature request expired before broadcast',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
+                  AND UPPER(status) = 'AWAITING_USER_SIGNATURE'
                   AND tx_hash IS NULL
                   AND created_at < datetime('now', '-15 minutes');
                 """,
@@ -1454,6 +1480,30 @@ class Database:
             ) as cur:
                 row = await cur.fetchone()
                 return dict(row) if row else None
+
+    async def get_reconcilable_usat_payments(self, user_identifier: int) -> list[dict[str, Any]]:
+        """Return broadcast payment records that must be checked against Celo.
+
+        A previously cancelled record is included deliberately: older client
+        versions could cancel a record after a broadcast timeout, even though the
+        chain transaction could subsequently succeed.
+        """
+        user_ids = await self._resolve_user_identifiers(user_identifier)
+        if not user_ids:
+            return []
+        placeholders = ",".join("?" * len(user_ids))
+        async with self.connect() as conn:
+            async with conn.execute(
+                f"""
+                SELECT * FROM usat_payments
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND tx_hash IS NOT NULL
+                  AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED')
+                ORDER BY created_at ASC;
+                """,
+                user_ids + user_ids,
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
 
     async def cancel_pending_payment(
         self,

@@ -50,6 +50,45 @@ PAYMENT_GAS_THRESHOLD_CELO = 0.02
 GAS_TOP_UP_CELO = 0.02
 
 
+async def reconcile_broadcast_payment(payment: dict) -> dict:
+    """Reconcile one previously broadcast payment without sending another transfer."""
+    tx_hash = str(payment.get("tx_hash") or "").strip()
+    payment_id = str(payment.get("payment_id") or "").strip()
+    if not tx_hash or not payment_id:
+        return payment
+
+    is_confirmed, block_number, detail = await celo_client.verify_usat_transfer_receipt(
+        tx_hash,
+        payment["from_address"],
+        payment["to_address"],
+        payment["amount_base_units"],
+    )
+    if is_confirmed:
+        await db.update_usat_payment_status(
+            payment_id, "SUCCESS", tx_hash=tx_hash, block_number=block_number, error_message=None
+        )
+    elif detail == "Transaction is not successfully confirmed.":
+        # A receipt was found and reverted. This is final and permits a new intent.
+        await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=detail)
+    else:
+        # Missing receipts, RPC outages, or verification delays are uncertain.
+        # Preserve the hash and block another broadcast until the chain is known.
+        await db.update_usat_payment_status(payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=detail)
+    return await db.get_usat_payment_by_id(payment_id) or payment
+
+
+async def reconcile_user_broadcast_payments(user_id: int) -> None:
+    """Correct stale local payment states from authoritative Celo receipts."""
+    try:
+        pending = await db.get_reconcilable_usat_payments(user_id)
+        for payment in pending:
+            await reconcile_broadcast_payment(payment)
+    except Exception:
+        # Reconciliation is a safety net. A temporary read outage must not rewrite
+        # payment state or be presented as a successful/failed transfer.
+        logger.warning("Payment reconciliation is temporarily unavailable for user ID %s", user_id)
+
+
 def validate_password_strength(password: str) -> tuple[bool, str]:
     """Validate password meets minimum security criteria (min 8 chars, letter + digit)."""
     if len(password) < 8:
@@ -1307,6 +1346,25 @@ async def api_create_payment(request: web.Request) -> web.Response:
     if not source_wallet:
         return web.json_response({"error": "Source wallet not found or unauthorized."}, status=404)
 
+    # A previous RPC timeout can still have produced a valid Celo transaction.
+    # Reconcile it before checking balances or accepting another payment intent.
+    await reconcile_user_broadcast_payments(user_id)
+    active = await db.get_active_usat_payment(user_id)
+    if active:
+        active_status = str(active.get("status") or "").upper()
+        if active.get("tx_hash"):
+            return web.json_response({
+                "success": False,
+                "status": "CONFIRMING",
+                "payment_id": active["payment_id"],
+                "message": "Your earlier transfer is being confirmed on Celo. A new transfer has not been submitted.",
+            }, status=202)
+        return web.json_response({
+            "error": "A wallet signature request is still open. Complete or dismiss it before starting another payment.",
+            "payment_id": active["payment_id"],
+            "status": active_status,
+        }, status=409)
+
     source_addr = Web3.to_checksum_address(source_wallet["address"])
     wallet_type = source_wallet.get("wallet_type", "connected")
 
@@ -1388,14 +1446,6 @@ async def api_create_payment(request: web.Request) -> web.Response:
             "error": f"Insufficient USDT balance: This wallet holds {available_usdt:.2f} USDT, but {amount_val:.2f} USDT was requested."
         }, status=400)
 
-    # 5. Concurrency check: max 1 active processing payment per user
-    active = await db.get_active_usat_payment(user_id)
-    if active:
-        return web.json_response({
-            "error": "You already have a payment currently processing. Please wait for confirmation.",
-            "payment_id": active["payment_id"],
-        }, status=409)
-
     payment_id = str(uuid.uuid4())
     rec_label = f"Recipient ({dest_addr[:6]}...{dest_addr[-4:]})"
 
@@ -1415,6 +1465,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
     try:
         current_celo = await celo_client.get_celo_balance(source_addr)
     except BlockchainUnavailableError:
+        await db.delete_unsubmitted_usat_payment(payment_id)
         return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
     celo_funded = False
     fund_tx_hash = None
@@ -1443,7 +1494,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
                     payment_id=payment_id, status="CONFIRMING", celo_fund_tx_hash=f_tx, error_message=f_err
                 )
                 return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
-            await db.update_usat_payment_status(payment_id, "FAILED", error_message="Gas funding failed before transfer submission")
+            await db.delete_unsubmitted_usat_payment(payment_id)
             logger.warning("Gas funding failed for %s: %s", source_addr, f_err)
             return web.json_response({"error": "Gas Funding Failed. The transfer was not submitted."}, status=503)
 
@@ -1454,7 +1505,7 @@ async def api_create_payment(request: web.Request) -> web.Response:
         try:
             decrypted_pk = encryption_service.decrypt(encrypted_pk)
         except Exception as e:
-            await db.update_usat_payment_status(payment_id, "FAILED", error_message="Key decryption error")
+            await db.delete_unsubmitted_usat_payment(payment_id)
             return web.json_response({"error": "Failed to decrypt wallet private key."}, status=500)
 
         success, tx_hash, block_num, err_desc = await celo_client.transfer_usat_imported(
@@ -1556,7 +1607,10 @@ async def api_create_payment(request: web.Request) -> web.Response:
             await db.update_usat_payment_status(payment_id, "CONFIRMING", tx_hash=tx_hash, error_message=err_desc)
             return web.json_response({"success": False, "status": "CONFIRMING", "payment_id": payment_id}, status=202)
         else:
-            await db.update_usat_payment_status(payment_id, "FAILED", error_message=err_desc)
+            if tx_hash:
+                await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=err_desc)
+            else:
+                await db.delete_unsubmitted_usat_payment(payment_id)
             return web.json_response({"error": err_desc or "Transaction reverted on Celo blockchain."}, status=500)
 
     else:
@@ -1660,8 +1714,14 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    total_count = await db.get_user_payments_count(user_id)
+    await reconcile_user_broadcast_payments(user_id)
     payments = await db.get_user_payments(user_id, limit=None)
+    # Records without a broadcast hash are only abandoned local intents, not
+    # payments.  Keep genuine on-chain transactions visible and reconcile them.
+    payments = [payment for payment in payments if not (
+        str(payment.get("status", "")).upper() in {"CANCELLED", "EXPIRED", "FAILED"}
+        and not payment.get("tx_hash")
+    )]
     wallets_by_address = {
         str(wallet.get("address", "")).lower(): wallet.get("wallet_name", "Wallet")
         for wallet in await db.get_user_wallets(user_id)
@@ -1686,9 +1746,36 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
 
     return web.json_response({
         "payments": formatted,
-        "total_count": total_count,
+        "total_count": len(formatted),
         "page": 0,
         "total_pages": 1,
+    })
+
+
+async def api_get_payment_status(request: web.Request) -> web.Response:
+    """Return the reconciled status of one payment owned by the current user."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    payment_id = str(request.match_info.get("payment_id", "")).strip()
+    payment = await db.get_usat_payment_by_id(payment_id)
+    if not payment or (payment.get("user_id") != user_id and payment.get("telegram_id") != user_id):
+        return web.json_response({"error": "Payment not found."}, status=404)
+
+    if payment.get("tx_hash") and str(payment.get("status", "")).upper() not in ("SUCCESS", "CONFIRMED"):
+        payment = await reconcile_broadcast_payment(payment)
+
+    status = str(payment.get("status") or "").upper()
+    return web.json_response({
+        "payment_id": payment.get("payment_id") or payment_id,
+        "status": "CONFIRMED" if status == "SUCCESS" else status,
+        "tx_hash": payment.get("tx_hash"),
+        "block_number": payment.get("block_number"),
+        "amount": payment.get("amount_usat"),
+        "from_address": payment.get("from_address"),
+        "to_address": payment.get("to_address"),
+        "explorer_url": f"{config.explorer_tx_url}{payment['tx_hash']}" if payment.get("tx_hash") else None,
     })
 
 
@@ -2348,8 +2435,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/recipients/{id}", api_delete_saved_recipient)
     app.router.add_post("/api/payments/create", api_create_payment)
     app.router.add_post("/api/payments/confirm-hash", api_submit_payment_hash)
-    app.router.add_post("/api/payments/cancel-active", api_cancel_payment)
-    app.router.add_post("/api/payments/{payment_id}/cancel", api_cancel_payment)
+    app.router.add_get("/api/payments/{payment_id}/status", api_get_payment_status)
     app.router.add_get("/api/payments", api_get_payments_history)
 
     # Profile

@@ -34,6 +34,7 @@ const app = (function () {
   let rewardPoolDisplayedAmount = null;
   let rewardPoolAnimationFrame = null;
   let rewardPoolRefreshTimer = null;
+  let paymentConfirmationTimer = null;
 
   // --- SVG Icon Helper & Lucide Refresh ---
 
@@ -518,18 +519,28 @@ const app = (function () {
     
     let resp = null;
     let isJson = false;
+    const requestMethod = String(options.method || 'GET').toUpperCase();
+    const canRetrySafely = requestMethod === 'GET';
 
-    try {
-      resp = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
-      const contentType = resp.headers.get('content-type') || '';
-      isJson = contentType.includes('application/json');
-    } catch (fetchErr) {
-      console.warn(`Backend fetch failed for ${url}:`, fetchErr);
-      isJson = false;
+    // Balance/history reads may briefly hit an overloaded RPC. Retry only reads;
+    // payment POSTs are deliberately never retried by the browser.
+    for (let attempt = 0; attempt < (canRetrySafely ? 3 : 1); attempt += 1) {
+      try {
+        resp = await fetch(url, {
+          ...options,
+          headers,
+          credentials: 'include',
+        });
+        const contentType = resp.headers.get('content-type') || '';
+        isJson = contentType.includes('application/json');
+      } catch (fetchErr) {
+        console.warn(`Backend fetch failed for ${url}:`, fetchErr);
+        resp = null;
+        isJson = false;
+      }
+      const retryableResponse = !resp || !isJson || [502, 503, 504].includes(resp.status);
+      if (!canRetrySafely || !retryableResponse || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
     }
 
     // If backend API is not available or returned non-JSON HTML (static Firebase rewrite)
@@ -547,7 +558,10 @@ const app = (function () {
       if (resp.status === 401 && !isAuthAttempt && endpoint !== '/api/auth/me') {
         void checkSession();
       }
-      throw new Error(data.error || data.message || `Server error (${resp.status})`);
+      const error = new Error(data.error || data.message || `Server error (${resp.status})`);
+      error.status = resp.status;
+      error.response = data;
+      throw error;
     }
 
     return data;
@@ -1042,7 +1056,12 @@ const app = (function () {
       updateWalletBalanceDisplays();
       return true;
     } catch (err) {
-      showToast('Failed to load wallets: ' + err.message, 'error');
+      showToast(
+        state.wallets.length
+          ? 'Balance refresh is delayed. Your last shown balances are unchanged.'
+          : 'Wallet balances are temporarily unavailable. Please try again shortly.',
+        'warning'
+      );
       return false;
     }
   }
@@ -1761,6 +1780,7 @@ const app = (function () {
     setPaymentStep(1, 'Verifying balances on Celo Mainnet...');
 
     let paymentConfirmed = false;
+    let paymentAwaitingConfirmation = false;
     try {
       const res = await apiRequest('/api/payments/create', {
         method: 'POST',
@@ -1777,6 +1797,12 @@ const app = (function () {
       const payment = res.payment || res;
       const paymentId = res.payment_id || payment.id || payment.payment_id;
       state.activePayment = payment;
+
+      if (res.status === 'CONFIRMING' || payment.status === 'CONFIRMING') {
+        paymentAwaitingConfirmation = true;
+        showPaymentConfirming(paymentId, wallet, recipient, amount);
+        return;
+      }
 
       if (res.celo_funded || payment.celo_funded) {
         setPaymentStep(2, '0.02 CELO gas added automatically. Gas confirmed on Celo.');
@@ -1812,13 +1838,19 @@ const app = (function () {
           const txHash = await Web3Module.sendUSATPayment(wallet.address, recipient, res.tx_params);
 
           setPaymentStep(3, 'Transaction broadcast! Confirming with backend...');
-          await apiRequest('/api/payments/confirm-hash', {
+          const confirmation = await apiRequest('/api/payments/confirm-hash', {
             method: 'POST',
             body: JSON.stringify({
               payment_id: paymentId,
               tx_hash: txHash,
             }),
           });
+
+          if (confirmation.status === 'CONFIRMING') {
+            paymentAwaitingConfirmation = true;
+            showPaymentConfirming(paymentId, wallet, recipient, amount);
+            return;
+          }
 
           finishPaymentSuccess(txHash, wallet, recipient, amount);
           paymentConfirmed = true;
@@ -1834,6 +1866,13 @@ const app = (function () {
         }
       }
     } catch (err) {
+      const pendingPaymentId = err.response?.payment_id;
+      if (err.status === 202 && pendingPaymentId) {
+        state.activePayment = { payment_id: pendingPaymentId, status: 'CONFIRMING' };
+        paymentAwaitingConfirmation = true;
+        showPaymentConfirming(pendingPaymentId, wallet, recipient, amount);
+        return;
+      }
       const errMsg = (err.message || '').toLowerCase();
       if (errMsg.includes('gas') || errMsg.includes('celo')) {
         showToast('CELO gas could not be added automatically. No payment was sent; please try again later.', 'warning');
@@ -1842,7 +1881,7 @@ const app = (function () {
     } finally {
       state.isSubmitting = false;
       state.pendingPayment = null;
-      if (!paymentConfirmed) loadWallets();
+      if (!paymentConfirmed && !paymentAwaitingConfirmation) void loadWallets();
     }
   }
 
@@ -1851,12 +1890,15 @@ const app = (function () {
   }
 
   function openPaymentModal() {
+    if (paymentConfirmationTimer) {
+      clearTimeout(paymentConfirmationTimer);
+      paymentConfirmationTimer = null;
+    }
     const modal = document.getElementById('modal-payment-progress');
     const headerTitle = document.getElementById('pay-modal-header-title');
     const stepInd = document.getElementById('pay-step-indicator');
     const receiptCard = document.getElementById('pay-receipt-card');
     const actionBtn = document.getElementById('btn-pay-modal-action');
-    const cancelBtn = document.getElementById('btn-pay-modal-cancel');
     const linkCont = document.getElementById('pay-tx-link-container');
     const closeBtn = document.getElementById('btn-close-pay-modal');
 
@@ -1865,7 +1907,6 @@ const app = (function () {
     if (stepInd) stepInd.style.display = 'flex';
     if (receiptCard) receiptCard.style.display = 'none';
     if (actionBtn) actionBtn.style.display = 'none';
-    if (cancelBtn) cancelBtn.style.display = 'none';
     if (linkCont) linkCont.style.display = 'none';
     if (closeBtn) closeBtn.style.display = 'none';
 
@@ -1902,6 +1943,10 @@ const app = (function () {
   }
 
   function finishPaymentSuccess(txHash, fromWallet, toAddress, amount) {
+    if (paymentConfirmationTimer) {
+      clearTimeout(paymentConfirmationTimer);
+      paymentConfirmationTimer = null;
+    }
     const stepInd = document.getElementById('pay-step-indicator');
     const headerTitle = document.getElementById('pay-modal-header-title');
     const titleEl = document.getElementById('pay-progress-title');
@@ -2037,7 +2082,6 @@ const app = (function () {
     const titleEl = document.getElementById('pay-progress-title');
     const descEl = document.getElementById('pay-progress-desc');
     const actionBtn = document.getElementById('btn-pay-modal-action');
-    const cancelBtn = document.getElementById('btn-pay-modal-cancel');
     const closeBtn = document.getElementById('btn-close-pay-modal');
 
     if (iconCont) {
@@ -2045,13 +2089,6 @@ const app = (function () {
     }
     if (titleEl) titleEl.textContent = 'Payment Failed';
     if (descEl) descEl.textContent = errorMsg;
-
-    if (cancelBtn) {
-      cancelBtn.style.display = 'inline-flex';
-      cancelBtn.onclick = async () => {
-        await cancelActiveFromModal();
-      };
-    }
 
     if (actionBtn) {
       actionBtn.style.display = 'block';
@@ -2064,32 +2101,34 @@ const app = (function () {
     showToast(`Payment error: ${errorMsg}`, 'error');
   }
 
-  async function cancelActiveFromModal() {
-    const targetId = (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) || 'active';
-    try {
-      showToast('Cancelling pending transaction...', 'info');
-      const res = await apiRequest(`/api/payments/${targetId}/cancel`, {
-        method: 'POST',
-      });
-      showToast(res.message || 'Pending transaction cancelled successfully.', 'success');
-      state.activePayment = null;
-      closeModal('modal-payment-progress');
-      await loadWallets();
-      await loadPaymentsHistory();
-      await loadDashboardData();
-    } catch (err) {
+  function showPaymentConfirming(paymentId, wallet, recipient, amount) {
+    setPaymentStep(3, 'Your transfer was submitted. Confirming it on Celo now…');
+    const actionBtn = document.getElementById('btn-pay-modal-action');
+    const closeBtn = document.getElementById('btn-close-pay-modal');
+    if (actionBtn) actionBtn.style.display = 'none';
+    if (closeBtn) closeBtn.style.display = 'none';
+
+    const checkStatus = async () => {
       try {
-        const res2 = await apiRequest('/api/payments/cancel-active', { method: 'POST' });
-        showToast(res2.message || 'Pending transaction cancelled successfully.', 'success');
-        state.activePayment = null;
-        closeModal('modal-payment-progress');
-        await loadWallets();
-        await loadPaymentsHistory();
-        await loadDashboardData();
-      } catch (err2) {
-        showToast(err.message || err2.message || 'Failed to cancel pending transaction.', 'error');
+        const statusResult = await apiRequest(`/api/payments/${encodeURIComponent(paymentId)}/status`);
+        const status = String(statusResult.status || '').toUpperCase();
+        if (status === 'SUCCESS' || status === 'CONFIRMED') {
+          state.activePayment = null;
+          finishPaymentSuccess(statusResult.tx_hash, wallet, recipient, amount);
+          return;
+        }
+        if (status === 'FAILED') {
+          state.activePayment = null;
+          setPaymentFailed('The transaction was reverted on Celo. No USDT was transferred.');
+          return;
+        }
+        paymentConfirmationTimer = setTimeout(checkStatus, 3000);
+      } catch (err) {
+        // The browser keeps the payment protected; the next check reconciles it.
+        paymentConfirmationTimer = setTimeout(checkStatus, 5000);
       }
-    }
+    };
+    void checkStatus();
   }
 
   // --- Wallet Cards & 3-Dot Dropdown Actions ---
@@ -2692,32 +2731,6 @@ const app = (function () {
     }
   }
 
-  async function cancelPendingPayment(paymentId) {
-    const targetId = paymentId || (state.activePayment && (state.activePayment.payment_id || state.activePayment.id)) || 'active';
-    try {
-      showToast('Cancelling transaction...', 'info');
-      const res = await apiRequest(`/api/payments/${targetId}/cancel`, {
-        method: 'POST',
-      });
-      showToast(res.message || 'Transaction cancelled successfully.', 'success');
-      state.activePayment = null;
-      await loadPaymentsHistory();
-      await loadDashboardData();
-      await loadWallets();
-    } catch (err) {
-      try {
-        const res2 = await apiRequest('/api/payments/cancel-active', { method: 'POST' });
-        showToast(res2.message || 'Transaction cancelled successfully.', 'success');
-        state.activePayment = null;
-        await loadPaymentsHistory();
-        await loadDashboardData();
-        await loadWallets();
-      } catch (err2) {
-        showToast(err.message || 'Failed to cancel payment.', 'error');
-      }
-    }
-  }
-
   // --- Profile View (Simplified & Clean) ---
 
   async function loadProfile() {
@@ -3316,8 +3329,6 @@ const app = (function () {
     openPaymentConfirmation,
     confirmAndExecutePayment,
     initiatePayment,
-    cancelPendingPayment,
-    cancelActiveFromModal,
     openAddWalletModal,
     openCreateWorkspaceModal,
     submitCreateWorkspace,
