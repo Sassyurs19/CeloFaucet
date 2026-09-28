@@ -1440,11 +1440,17 @@ async def api_create_payment(request: web.Request) -> web.Response:
     active = await db.get_active_usat_payment(user_id)
     if active and not active.get("tx_hash") and active.get("celo_fund_tx_hash"):
         active = await reconcile_pending_gas_funding(active)
-        # A mined funding receipt leaves no USAT transfer in flight, so a new
-        # payment may safely continue instead of trapping this user on an old
-        # "signature request" message.
-        if str(active.get("status") or "").upper() in {"GAS_READY", "FAILED"}:
-            active = await db.get_active_usat_payment(user_id)
+        # A gas-only transaction cannot transfer USAT.  If its receipt remains
+        # unavailable, retain it as an audit record but do not block a new
+        # USAT payment forever; the new attempt rechecks the actual CELO balance
+        # before it can sign or broadcast a token transfer.
+        if str(active.get("status") or "").upper() not in {"GAS_READY", "FAILED"}:
+            await db.update_usat_payment_status(
+                active["payment_id"],
+                "GAS_PENDING",
+                error_message="Gas top-up receipt is pending; no USAT transfer was sent.",
+            )
+        active = await db.get_active_usat_payment(user_id)
     if active:
         active_status = str(active.get("status") or "").upper()
         if active.get("tx_hash"):
@@ -2023,9 +2029,17 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
                 "payment_id": payment.get("payment_id") or payment_id,
                 "message": "The gas top-up was resolved. No USAT transfer was sent; you can pay again.",
             })
+        await db.update_usat_payment_status(
+            payment["payment_id"],
+            "GAS_PENDING",
+            error_message="Gas top-up receipt is pending; no USAT transfer was sent.",
+        )
         return web.json_response({
-            "error": "The gas top-up is still awaiting its Celo receipt. No USAT transfer was sent. Please try again shortly."
-        }, status=409)
+            "success": True,
+            "status": "UNLOCKED",
+            "payment_id": payment.get("payment_id") or payment_id,
+            "message": "No USAT transfer was sent. The pending gas top-up was released and you can pay again.",
+        })
 
     # Proceed with cancellation
     target_pid = payment.get("payment_id") or payment_id
