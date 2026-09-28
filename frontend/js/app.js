@@ -2102,7 +2102,7 @@ const app = (function () {
   }
 
   function showPaymentConfirming(paymentId, wallet, recipient, amount) {
-    setPaymentStep(3, 'Your transfer was submitted. Confirming it on Celo now…');
+    setPaymentStep(3, 'Finalizing your payment…');
     const actionBtn = document.getElementById('btn-pay-modal-action');
     const closeBtn = document.getElementById('btn-close-pay-modal');
     if (actionBtn) actionBtn.style.display = 'none';

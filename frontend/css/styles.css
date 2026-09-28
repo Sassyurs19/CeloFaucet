@@ -2088,6 +2088,21 @@ i[data-lucide], svg.lucide {
   margin-bottom: 16px;
 }
 
+/* Keep the Wallets header compact: it is a page label, not a hero card. */
+.wallets-page-header {
+  padding: 0 0 8px;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.wallets-page-header h1 {
+  font-size: 20px !important;
+}
+
+.wallets-page-header .description {
+  margin-top: 0 !important;
+}
+
 .payments-stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2241,6 +2256,8 @@ i[data-lucide], svg.lucide {
     align-items: flex-start;
     gap: 8px;
   }
+  .wallets-page-header { padding-bottom: 5px; margin-bottom: 5px; }
+  .wallets-page-header h1 { font-size: 19px !important; }
   .payments-page-header h1 { font-size: 21px !important; }
   .payments-page-header .description { font-size: 12px; max-width: 210px; }
   .payments-page-header .btn { padding: 6px 9px; }

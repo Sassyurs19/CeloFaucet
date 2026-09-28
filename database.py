@@ -324,21 +324,6 @@ class Database:
                 WHERE workspace_id IS NULL AND user_id IS NOT NULL;
                 """
             )
-            # Imported-wallet processing records with no transaction hash cannot
-            # have reached Celo after this long; release the stale local intent.
-            await conn.execute(
-                f"""
-                UPDATE usat_payments
-                SET status = 'EXPIRED',
-                    error_message = 'Transfer was not submitted',
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND UPPER(status) IN ('PROCESSING', 'PENDING')
-                  AND tx_hash IS NULL
-                  AND created_at < datetime('now', '-15 minutes');
-                """,
-                user_ids + user_ids,
-            )
             await conn.commit()
 
             # 5. Legacy faucet claims table (preserved for backwards compatibility)
