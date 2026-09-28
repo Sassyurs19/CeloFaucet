@@ -627,10 +627,6 @@ async def api_get_wallets(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    network_ok, _ = await celo_client.verify_network()
-    if not network_ok:
-        return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
-
     try:
         await db.ensure_personal_workspace(user_id)
         raw_wallets = await db.get_user_wallets(user_id)
@@ -642,11 +638,23 @@ async def api_get_wallets(request: web.Request) -> web.Response:
 
     async def fetch_wallet_info(w):
         addr = w["address"]
-        async with wallet_read_limit:
-            celo_task = celo_client.get_celo_balance(addr)
-            usat_task = celo_client.get_usat_balance(addr)
-            celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
-        u_val = float(usat_bal)
+        try:
+            async with wallet_read_limit:
+                celo_task = celo_client.get_celo_balance(addr)
+                usat_task = celo_client.get_usat_balance(addr)
+                celo_bal, (_, usat_bal) = await asyncio.gather(celo_task, usat_task)
+            u_val = float(usat_bal)
+            celo_value = f"{celo_bal:.4f}"
+            usat_value = f"{u_val:.2f}"
+            balances_available = True
+        except Exception:
+            # Wallet ownership and workspace membership are database records.
+            # Never hide them because a public RPC is slow or unavailable.
+            # Null is intentional: it must never be rendered as a zero balance.
+            u_val = None
+            celo_value = None
+            usat_value = None
+            balances_available = False
 
         return {
             "id": w["id"],
@@ -656,26 +664,27 @@ async def api_get_wallets(request: web.Request) -> web.Response:
             "type": w.get("wallet_type", "connected"),
             "wallet_type": w.get("wallet_type", "connected"),
             "workspace_id": w.get("workspace_id"),
-            "celo_balance": f"{celo_bal:.4f}",
-            "usat_balance": f"{u_val:.2f}",
+            "celo_balance": celo_value,
+            "usat_balance": usat_value,
+            "balances_available": balances_available,
             "created_at": w.get("created_at"),
             "_usat_num": u_val,
         }
 
     if raw_wallets:
-        try:
-            wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
-        except BlockchainUnavailableError:
-            return web.json_response({"error": "Blockchain data is temporarily unavailable."}, status=503)
-        total_usdt = sum(w.pop("_usat_num", 0.0) for w in wallets_data)
+        wallets_data = await asyncio.gather(*(fetch_wallet_info(w) for w in raw_wallets))
+        balances_available = all(w.get("balances_available") for w in wallets_data)
+        total_usdt = sum(w.pop("_usat_num", 0.0) or 0.0 for w in wallets_data)
         wallets_data.sort(key=lambda w: (w.get("name") or "").lower())
     else:
         wallets_data = []
         total_usdt = 0.0
+        balances_available = True
 
     return web.json_response({
         "wallets": wallets_data,
-        "total_usdt_balance": f"{total_usdt:.2f}",
+        "total_usdt_balance": f"{total_usdt:.2f}" if balances_available else None,
+        "balances_available": balances_available,
         "total_wallets": len(wallets_data),
     })
 

@@ -108,6 +108,16 @@ const app = (function () {
     element.classList.toggle('balance-zero', !isAvailable);
   }
 
+  function hasLiveWalletBalance(wallet) {
+    return wallet?.balances_available !== false && wallet?.usat_balance !== null && wallet?.usat_balance !== undefined;
+  }
+
+  function workspaceBalanceText(wallets, currency = 'USAT') {
+    if (wallets.some((wallet) => !hasLiveWalletBalance(wallet))) return 'Balance unavailable';
+    const total = wallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
+    return `$${total.toFixed(2)} ${currency}`;
+  }
+
   async function copyAddress(addr) {
     if (!addr) return;
     try {
@@ -1109,20 +1119,21 @@ const app = (function () {
       const activeWorkspace = (state.workspaces || []).find((workspace) => String(workspace.id) === String(state.activeWorkspaceId));
       if (activeWorkspace) {
         const activeWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(activeWorkspace.id));
-        const activeUsat = activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
-        const activeCelo = activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
+        const activeUsat = workspaceBalanceText(activeWallets);
+        const activeCelo = activeWallets.some((wallet) => wallet.balances_available === false) ? 'Balance unavailable' : `${activeWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0).toFixed(4)} CELO`;
         workspaceBar?.classList.remove('is-chooser');
         workspaceList.innerHTML = `<button type="button" class="workspace-back" onclick="app.backToWorkspaces()"><i data-lucide="arrow-left" class="icon-sm"></i> All Workspaces</button>
-          <div class="workspace-current"><span class="workspace-current-name"><strong>${escapeHtml(activeWorkspace.name)}</strong><small>${activeWallets.length} ${activeWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-current-balances"><strong>$${activeUsat.toFixed(2)} USAT</strong><small>${activeCelo.toFixed(4)} CELO</small></span><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
+          <div class="workspace-current"><span class="workspace-current-name"><strong>${escapeHtml(activeWorkspace.name)}</strong><small>${activeWallets.length} ${activeWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-current-balances"><strong>${activeUsat}</strong><small>${activeCelo}</small></span><button type="button" class="btn-copy" onclick="app.openRenameWorkspaceModal(${activeWorkspace.id})" title="Rename workspace"><i data-lucide="pencil" class="icon-xs"></i></button><button type="button" class="btn btn-secondary btn-sm workspace-recover-btn" onclick="app.openCeloRecoveryModal(${activeWorkspace.id})" title="Recover workspace CELO"><i data-lucide="rotate-ccw" class="icon-xs"></i><span>Recover CELO</span></button></div>`;
         if (addWalletButton) addWalletButton.style.display = 'inline-flex';
       } else {
         workspaceBar?.classList.add('is-chooser');
         workspaceList.innerHTML = (state.workspaces || []).map((workspace) => {
           const workspaceWallets = (state.wallets || []).filter((wallet) => String(wallet.workspace_id) === String(workspace.id));
-          const usatBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
-          const celoBalance = workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0);
+          const hasUnavailableBalance = workspaceWallets.some((wallet) => wallet.balances_available === false);
+          const usatBalance = workspaceBalanceText(workspaceWallets);
+          const celoBalance = hasUnavailableBalance ? 'Balance unavailable' : `${workspaceWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.celo_balance || 0), 0).toFixed(4)} CELO`;
           return `<button type="button" class="workspace-choice" onclick="app.selectWalletWorkspace('${escapeHtml(workspace.id)}')">
-            <i data-lucide="wallet" class="icon-sm"></i><span class="workspace-choice-name">${escapeHtml(workspace.name)}<small>${workspaceWallets.length} ${workspaceWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-choice-balances"><strong class="${usatBalance > 0 ? 'balance-positive' : 'balance-zero'}">$${usatBalance.toFixed(2)} USAT</strong><small>${celoBalance.toFixed(4)} CELO</small></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
+            <i data-lucide="wallet" class="icon-sm"></i><span class="workspace-choice-name">${escapeHtml(workspace.name)}<small>${workspaceWallets.length} ${workspaceWallets.length === 1 ? 'wallet' : 'wallets'}</small></span><span class="workspace-choice-balances"><strong class="${hasUnavailableBalance ? 'balance-zero' : (Number.parseFloat(usatBalance.replace(/[^0-9.]/g, '')) > 0 ? 'balance-positive' : 'balance-zero')}">${usatBalance}</strong><small>${celoBalance}</small></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
           </button>`;
         }).join('') + `<button type="button" class="workspace-choice workspace-create-choice" onclick="app.openCreateWorkspaceModal()">
           <i data-lucide="folder-plus" class="icon-sm"></i><span class="workspace-choice-name">New Workspace<small>Create a separate wallet space</small></span><span class="workspace-choice-balances"><strong>+</strong></span><i data-lucide="chevron-right" class="icon-xs workspace-choice-arrow"></i>
@@ -2151,12 +2162,13 @@ const app = (function () {
     const visibleWallets = state.activeWorkspaceId
       ? state.wallets.filter((wallet) => String(wallet.workspace_id) === String(state.activeWorkspaceId))
       : state.wallets;
+    const balancesUnavailable = visibleWallets.some((wallet) => !hasLiveWalletBalance(wallet));
     const workspaceBalance = visibleWallets.reduce((sum, wallet) => sum + Number.parseFloat(wallet.usat_balance || 0), 0);
     const summaryAmount = document.getElementById('wallets-summary-usdt');
     const summaryCount = document.getElementById('wallets-summary-count');
-    if (summaryAmount) summaryAmount.textContent = `$${workspaceBalance.toFixed(2)}`;
+    if (summaryAmount) summaryAmount.textContent = balancesUnavailable ? 'Balance unavailable' : `$${workspaceBalance.toFixed(2)}`;
     if (summaryCount) summaryCount.textContent = visibleWallets.length;
-    setBalanceTone(summaryAmount, workspaceBalance);
+    setBalanceTone(summaryAmount, balancesUnavailable ? null : workspaceBalance);
 
     if (!state.activeWorkspaceId) {
       container.innerHTML = '';
@@ -2193,9 +2205,9 @@ const app = (function () {
       const badgeClass = isConnected ? 'badge-blue' : 'badge-green';
       const typeLabel = isConnected ? 'Connected' : 'Imported';
       const walletName = escapeHtml(w.name || w.label || 'My Wallet');
-      const usdt = parseFloat(w.usat_balance || 0).toFixed(2);
-      const celoNum = parseFloat(w.celo_balance || 0);
-      const celo = celoNum.toFixed(4);
+      const balanceAvailable = hasLiveWalletBalance(w);
+      const usdt = balanceAvailable ? parseFloat(w.usat_balance).toFixed(2) : 'Unavailable';
+      const celo = balanceAvailable ? parseFloat(w.celo_balance).toFixed(4) : 'Unavailable';
       const isSelected = state.selectedWalletId === w.id;
       const isExpanded = String(state.expandedWalletId) === String(w.id);
 
@@ -2206,7 +2218,7 @@ const app = (function () {
               <span class="wallet-card-title" title="${walletName}">${walletName}</span>
               <span class="wallet-card-subtitle">${isSelected ? 'Selected for payment' : typeLabel}</span>
             </span>
-            <span class="wallet-summary-balance ${Number(usdt) > 0 ? 'balance-positive' : 'balance-zero'}">$${usdt}<small>USDT</small></span>
+            <span class="wallet-summary-balance ${balanceAvailable && Number(usdt) > 0 ? 'balance-positive' : 'balance-zero'}">${balanceAvailable ? `$${usdt}` : usdt}<small>${balanceAvailable ? 'USDT' : ''}</small></span>
             <i data-lucide="chevron-${isExpanded ? 'up' : 'down'}" class="icon-sm wallet-expand-icon"></i>
           </button>
           ${isExpanded ? `
@@ -2216,7 +2228,7 @@ const app = (function () {
                 <button type="button" class="btn-copy" onclick="app.copyAddress('${w.address}')" title="Copy address"><i data-lucide="copy" class="icon-xs"></i></button>
                 <span class="badge ${badgeClass}">${typeLabel}</span>
               </div>
-              <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}</strong></span></div>
+              <div class="wallet-detail-stats"><span>CELO gas <strong>${celo}${balanceAvailable ? '' : ''}</strong></span></div>
               <div class="wallet-detail-actions">
                 <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
