@@ -89,6 +89,34 @@ async def reconcile_user_broadcast_payments(user_id: int) -> None:
         logger.warning("Payment reconciliation is temporarily unavailable for user ID %s", user_id)
 
 
+async def reconcile_pending_gas_funding(payment: dict) -> dict:
+    """Resolve an uncertain server-funded gas top-up without sending USAT.
+
+    This applies only when no USAT transaction hash exists.  A confirmed gas
+    top-up may release the user to begin a fresh payment, but is never reported
+    as a completed USAT payment.
+    """
+    payment_id = str(payment.get("payment_id") or "").strip()
+    funding_hash = str(payment.get("celo_fund_tx_hash") or "").strip()
+    if not payment_id or not funding_hash or payment.get("tx_hash"):
+        return payment
+
+    funding_outcome = await celo_client.get_transaction_receipt_outcome(funding_hash)
+    if funding_outcome is True:
+        await db.update_usat_payment_status(
+            payment_id,
+            "GAS_READY",
+            error_message="CELO gas funding confirmed; USAT transfer was not submitted.",
+        )
+    elif funding_outcome is False:
+        await db.update_usat_payment_status(
+            payment_id,
+            "FAILED",
+            error_message="CELO gas funding transaction reverted on Celo.",
+        )
+    return await db.get_usat_payment_by_id(payment_id) or payment
+
+
 def validate_password_strength(password: str) -> tuple[bool, str]:
     """Validate password meets minimum security criteria (min 8 chars, letter + digit)."""
     if len(password) < 8:
@@ -906,6 +934,56 @@ async def api_delete_wallet(request: web.Request) -> web.Response:
     return web.json_response({"success": True})
 
 
+async def api_export_wallet_private_key(request: web.Request) -> web.Response:
+    """Reveal an imported wallet key only after fresh password verification."""
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        wallet_id = int(request.match_info["id"])
+        data = await request.json()
+    except (KeyError, TypeError, ValueError):
+        return web.json_response({"error": "Invalid export request."}, status=400)
+
+    password = str(data.get("password") or "")
+    if not password:
+        return web.json_response({"error": "Enter your account password to continue."}, status=400)
+
+    user = await db.get_user_by_id(user_id)
+    stored_hash = (user or {}).get("password_hash")
+    if not stored_hash:
+        return web.json_response({"error": "Account password is incorrect."}, status=401)
+    try:
+        password_hasher.verify(stored_hash, password)
+    except Exception:
+        return web.json_response({"error": "Account password is incorrect."}, status=401)
+
+    wallet = await db.get_user_wallet_by_id(wallet_id, user_id)
+    if not wallet:
+        return web.json_response({"error": "Wallet not found or unauthorized."}, status=404)
+    if wallet.get("wallet_type") != "imported" or not wallet.get("encrypted_private_key"):
+        return web.json_response({"error": "Only imported wallets have a private key available for export."}, status=400)
+
+    private_key = None
+    try:
+        private_key = encryption_service.decrypt(wallet["encrypted_private_key"])
+        derived = Account.from_key(private_key).address
+        if Web3.to_checksum_address(derived).lower() != Web3.to_checksum_address(wallet["address"]).lower():
+            raise ValueError("Stored wallet key does not match its address.")
+        response = web.json_response({"private_key": private_key})
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except Exception:
+        # Do not include cryptographic processing details in logs or responses.
+        logger.warning("Private-key export failed for wallet ID %s", wallet_id)
+        return web.json_response({"error": "Unable to export this wallet key. Please contact support."}, status=500)
+    finally:
+        password = None
+        private_key = None
+
+
 async def _run_workspace_celo_recovery(batch_id: str, user_id: int, workspace_id: int, destination: str) -> None:
     """Recover imported wallets sequentially; never invoke the gas-funding flow."""
     reserve_wei = int(Web3.to_wei(config.celo_recovery_fee_reserve, "ether"))
@@ -1350,6 +1428,13 @@ async def api_create_payment(request: web.Request) -> web.Response:
     # Reconcile it before checking balances or accepting another payment intent.
     await reconcile_user_broadcast_payments(user_id)
     active = await db.get_active_usat_payment(user_id)
+    if active and not active.get("tx_hash") and active.get("celo_fund_tx_hash"):
+        active = await reconcile_pending_gas_funding(active)
+        # A mined funding receipt leaves no USAT transfer in flight, so a new
+        # payment may safely continue instead of trapping this user on an old
+        # "signature request" message.
+        if str(active.get("status") or "").upper() in {"GAS_READY", "FAILED"}:
+            active = await db.get_active_usat_payment(user_id)
     if active:
         active_status = str(active.get("status") or "").upper()
         if active.get("tx_hash"):
@@ -1792,23 +1877,7 @@ async def api_get_payment_status(request: web.Request) -> web.Response:
         # The funding transaction was broadcast but the request did not receive
         # its receipt in time.  Reconcile it separately: no USAT transfer has
         # been broadcast, so this payment can never be presented as successful.
-        funding_outcome = await celo_client.get_transaction_receipt_outcome(
-            payment["celo_fund_tx_hash"]
-        )
-        if funding_outcome is True:
-            await db.update_usat_payment_status(
-                payment_id,
-                "GAS_READY",
-                error_message="CELO gas funding confirmed; USAT transfer was not submitted.",
-            )
-            payment = await db.get_usat_payment_by_id(payment_id) or payment
-        elif funding_outcome is False:
-            await db.update_usat_payment_status(
-                payment_id,
-                "FAILED",
-                error_message="CELO gas funding transaction reverted on Celo.",
-            )
-            payment = await db.get_usat_payment_by_id(payment_id) or payment
+        payment = await reconcile_pending_gas_funding(payment)
 
     status = str(payment.get("status") or "").upper()
     return web.json_response({
@@ -2469,6 +2538,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/wallets/{id}/payments", api_get_wallet_payment_history)
     app.router.add_patch("/api/wallets/{id}", api_rename_wallet)
     app.router.add_delete("/api/wallets/{id}", api_delete_wallet)
+    app.router.add_post("/api/wallets/{id}/export-private-key", api_export_wallet_private_key)
     app.router.add_post("/api/workspaces/{id}/celo-recovery", api_start_workspace_celo_recovery)
     app.router.add_get("/api/celo-recoveries/{batch_id}", api_get_workspace_celo_recovery_status)
 

@@ -35,6 +35,7 @@ const app = (function () {
   let rewardPoolAnimationFrame = null;
   let rewardPoolRefreshTimer = null;
   let paymentConfirmationTimer = null;
+  let privateKeyExportTimer = null;
 
   // --- SVG Icon Helper & Lucide Refresh ---
 
@@ -2220,6 +2221,7 @@ const app = (function () {
                 <button class="btn ${isSelected ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="app.useWalletForPayment(${w.id})"><i data-lucide="${isSelected ? 'check' : 'arrow-right'}" class="icon-xs"></i>${isSelected ? 'Selected' : 'Use for Payment'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openWalletHistory(${w.id}, event)"><i data-lucide="history" class="icon-xs"></i> History</button>
                 <button class="btn btn-secondary btn-sm" onclick="app.openRenameWalletModal(${w.id}, '${escapeHtml(w.name || w.label || '')}')"><i data-lucide="pencil" class="icon-xs"></i> Rename</button>
+                ${isImported ? `<button class="btn btn-secondary btn-sm" onclick="app.openExportWalletModal(${w.id})"><i data-lucide="key-round" class="icon-xs"></i> Export Key</button>` : ''}
                 <button class="btn btn-danger btn-sm" onclick="app.handleDeleteWallet(${w.id})"><i data-lucide="trash-2" class="icon-xs"></i> Remove</button>
               </div>
             </div>` : ''}
@@ -2365,6 +2367,59 @@ const app = (function () {
     if (nameInput) nameInput.value = currentName || '';
     const modal = document.getElementById('modal-rename-wallet');
     if (modal) modal.classList.add('active');
+  }
+
+  function openExportWalletModal(walletId) {
+    const wallet = state.wallets.find((item) => String(item.id) === String(walletId));
+    if (!wallet || String(wallet.wallet_type || wallet.type || '').toLowerCase() !== 'imported') {
+      showToast('A private key is available only for imported wallets.', 'warning');
+      return;
+    }
+    const idInput = document.getElementById('export-wallet-id');
+    const nameEl = document.getElementById('export-wallet-name');
+    const passwordInput = document.getElementById('export-wallet-password');
+    const result = document.getElementById('export-private-key-result');
+    const button = document.getElementById('btn-export-private-key');
+    if (idInput) idInput.value = String(walletId);
+    if (nameEl) nameEl.textContent = wallet.name || wallet.label || 'Imported wallet';
+    if (passwordInput) passwordInput.value = '';
+    if (result) { result.value = ''; result.style.display = 'none'; }
+    if (privateKeyExportTimer) clearInterval(privateKeyExportTimer);
+    let remaining = 3;
+    if (button) { button.disabled = true; button.textContent = `Read warning (${remaining})`; }
+    privateKeyExportTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0 && button) button.textContent = `Read warning (${remaining})`;
+      if (remaining <= 0) {
+        clearInterval(privateKeyExportTimer);
+        privateKeyExportTimer = null;
+        if (button) { button.disabled = false; button.textContent = 'Reveal Private Key'; }
+      }
+    }, 1000);
+    openModal('modal-export-private-key');
+  }
+
+  async function submitPrivateKeyExport(event) {
+    event.preventDefault();
+    const walletId = document.getElementById('export-wallet-id')?.value;
+    const passwordInput = document.getElementById('export-wallet-password');
+    const result = document.getElementById('export-private-key-result');
+    const button = document.getElementById('btn-export-private-key');
+    if (!walletId || !passwordInput?.value || !result) return;
+    if (button) button.disabled = true;
+    try {
+      const data = await apiRequest(`/api/wallets/${encodeURIComponent(walletId)}/export-private-key`, {
+        method: 'POST',
+        body: JSON.stringify({ password: passwordInput.value }),
+      });
+      passwordInput.value = '';
+      result.value = data.private_key || '';
+      result.style.display = 'block';
+      showToast('Private key revealed once. Save it offline and never share it.', 'warning');
+    } catch (err) {
+      showToast(err.message || 'Unable to reveal the private key.', 'error');
+      if (button) button.disabled = false;
+    }
   }
 
   async function submitRenameWallet(event) {
@@ -3268,6 +3323,14 @@ const app = (function () {
   function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.remove('active');
+    if (modalId === 'modal-export-private-key') {
+      if (privateKeyExportTimer) clearInterval(privateKeyExportTimer);
+      privateKeyExportTimer = null;
+      const result = document.getElementById('export-private-key-result');
+      const password = document.getElementById('export-wallet-password');
+      if (result) { result.value = ''; result.style.display = 'none'; }
+      if (password) password.value = '';
+    }
   }
 
   // --- Initialization ---
@@ -3374,6 +3437,8 @@ const app = (function () {
     refreshSingleWallet,
     openRenameWalletModal,
     submitRenameWallet,
+    openExportWalletModal,
+    submitPrivateKeyExport,
     loadWallets,
     refreshAllWalletBalances,
     openModal,

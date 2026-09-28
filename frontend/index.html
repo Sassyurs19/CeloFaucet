@@ -1105,6 +1105,32 @@
     </div>
   </div>
 
+  <!-- Protected private-key recovery for imported wallets only. -->
+  <div id="modal-export-private-key" class="modal-overlay">
+    <div class="modal-card" style="max-width: 430px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color:var(--danger);">Export Private Key</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-export-private-key')">&times;</button>
+      </div>
+      <form onsubmit="app.submitPrivateKeyExport(event)">
+        <input type="hidden" id="export-wallet-id">
+        <p class="description">You are exporting the key for <strong id="export-wallet-name"></strong>.</p>
+        <div class="card-surface" style="border-left:3px solid var(--danger); padding:12px; margin:12px 0; font-size:13px; color:var(--text-secondary);">
+          Anyone with this key can permanently control this wallet and its funds. Save it offline in a password manager or on paper. Never send it through chat, screenshots, or email.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm with your account password</label>
+          <input type="password" id="export-wallet-password" class="form-input" required autocomplete="current-password">
+        </div>
+        <textarea id="export-private-key-result" class="form-input" readonly spellcheck="false" style="display:none; min-height:72px; font-family:monospace; margin:12px 0;" aria-label="Private key"></textarea>
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button type="submit" class="btn btn-danger" id="btn-export-private-key" disabled style="flex:1;">Read warning (3)</button>
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal('modal-export-private-key')">Close</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- =========================================================
        MODAL 6: WALLET TRANSACTION HISTORY
        ========================================================= -->
