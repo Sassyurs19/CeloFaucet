@@ -358,7 +358,7 @@ class CeloClient:
 
             # Wait for receipt
             receipt = await asyncio.to_thread(
-                self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=20
+                self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
             )
             if receipt.get("status") == 1:
                 logger.info("%.6f CELO funding confirmed for %s: %s", amount_celo, to_chk, tx_hash)
@@ -513,7 +513,7 @@ class CeloClient:
             # payment screen as soon as the chain settles the transfer.
             try:
                 receipt = await asyncio.to_thread(
-                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=25
+                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90
                 )
             except Exception:
                 return False, tx_hash, 0, "Transaction status is pending reconciliation."

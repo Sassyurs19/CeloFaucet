@@ -1800,7 +1800,7 @@ const app = (function () {
 
       if (res.status === 'CONFIRMING' || payment.status === 'CONFIRMING') {
         paymentAwaitingConfirmation = true;
-        showPaymentConfirming(paymentId, wallet, recipient, amount, res.tx_hash || payment.tx_hash);
+        showPaymentConfirming(paymentId, wallet, recipient, amount);
         return;
       }
 
@@ -1868,13 +1868,9 @@ const app = (function () {
     } catch (err) {
       const pendingPaymentId = err.response?.payment_id;
       if (err.status === 202 && pendingPaymentId) {
-        state.activePayment = {
-          payment_id: pendingPaymentId,
-          status: 'CONFIRMING',
-          tx_hash: err.response?.tx_hash || null,
-        };
+        state.activePayment = { payment_id: pendingPaymentId, status: 'CONFIRMING' };
         paymentAwaitingConfirmation = true;
-        showPaymentConfirming(pendingPaymentId, wallet, recipient, amount, err.response?.tx_hash);
+        showPaymentConfirming(pendingPaymentId, wallet, recipient, amount);
         return;
       }
       const errMsg = (err.message || '').toLowerCase();
@@ -2105,34 +2101,12 @@ const app = (function () {
     showToast(`Payment error: ${errorMsg}`, 'error');
   }
 
-  function showPaymentConfirming(paymentId, wallet, recipient, amount, submittedTxHash = null) {
-    setPaymentStep(3, 'Transfer sent. The receipt will update automatically.');
-    const headerTitle = document.getElementById('pay-modal-header-title');
-    const titleEl = document.getElementById('pay-progress-title');
-    const iconCont = document.getElementById('pay-progress-icon-container');
+  function showPaymentConfirming(paymentId, wallet, recipient, amount) {
+    setPaymentStep(3, 'Finalizing your payment…');
     const actionBtn = document.getElementById('btn-pay-modal-action');
     const closeBtn = document.getElementById('btn-close-pay-modal');
-    const linkCont = document.getElementById('pay-tx-link-container');
-    const linkEl = document.getElementById('pay-tx-link');
-    const txHash = submittedTxHash || state.activePayment?.tx_hash;
-    if (headerTitle) headerTitle.textContent = 'Transfer Sent';
-    if (titleEl) titleEl.textContent = 'Transfer Sent';
-    if (iconCont) iconCont.innerHTML = '<i data-lucide="send" class="icon-lg" style="color:var(--accent-blue);"></i>';
-    if (txHash && linkCont && linkEl) {
-      linkCont.style.display = 'flex';
-      linkEl.href = `${CELO_EXPLORER_BASE}${txHash}`;
-      linkEl.innerHTML = '<span>View on Celo Explorer</span> <i data-lucide="external-link" class="icon-sm"></i>';
-    }
-    if (actionBtn) {
-      actionBtn.style.display = 'block';
-      actionBtn.textContent = 'Back to Dashboard';
-      actionBtn.onclick = () => {
-        closeModal('modal-payment-progress');
-        navigateTo('dashboard');
-      };
-    }
-    if (closeBtn) closeBtn.style.display = 'block';
-    renderIcons();
+    if (actionBtn) actionBtn.style.display = 'none';
+    if (closeBtn) closeBtn.style.display = 'none';
 
     const checkStatus = async () => {
       try {
