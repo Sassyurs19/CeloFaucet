@@ -1855,6 +1855,11 @@ async def api_get_payments_history(request: web.Request) -> web.Response:
             "tx_hash": p.get("tx_hash"),
             "explorer_url": f"{config.explorer_tx_url}{p['tx_hash']}" if p.get("tx_hash") else None,
             "celo_funded": bool(p.get("celo_funded")),
+            "can_unlock": (
+                str(p.get("status") or "").upper() in {"PROCESSING", "PENDING", "AWAITING_USER_SIGNATURE"}
+                and not p.get("tx_hash")
+                and not p.get("celo_fund_tx_hash")
+            ),
             "created_at": p.get("created_at"),
         })
 
@@ -1998,18 +2003,14 @@ async def api_cancel_payment(request: web.Request) -> web.Response:
             "payment_id": payment.get("payment_id") or str(payment.get("id")),
         })
 
-    # If tx_hash exists, check on-chain whether funds were debited
-    tx_hash = payment.get("tx_hash")
-    if tx_hash:
-        try:
-            receipt = await celo_client.get_transaction_receipt(tx_hash)
-            if receipt and receipt.get("status") == 1:
-                await db.update_usat_payment_status(payment["payment_id"], "SUCCESS", block_number=receipt.get("blockNumber"))
-                return web.json_response({
-                    "error": "Transaction was already debited and mined on Celo blockchain. Cannot cancel."
-                }, status=400)
-        except Exception as ex:
-            logger.warning("Could not verify on-chain receipt for tx %s: %s", tx_hash, ex)
+    # Once either hash exists, the blockchain may still settle it.  Refuse to
+    # unlock it rather than allowing a second transfer to be created.
+    if payment.get("tx_hash") or payment.get("celo_fund_tx_hash"):
+        if payment.get("tx_hash"):
+            payment = await reconcile_broadcast_payment(payment)
+        return web.json_response({
+            "error": "This payment was submitted to Celo and cannot be unlocked until its receipt is resolved."
+        }, status=409)
 
     # Proceed with cancellation
     target_pid = payment.get("payment_id") or payment_id
@@ -2559,6 +2560,8 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/recipients/{id}", api_delete_saved_recipient)
     app.router.add_post("/api/payments/create", api_create_payment)
     app.router.add_post("/api/payments/confirm-hash", api_submit_payment_hash)
+    app.router.add_post("/api/payments/cancel-active", api_cancel_payment)
+    app.router.add_post("/api/payments/{payment_id}/cancel", api_cancel_payment)
     app.router.add_get("/api/payments/{payment_id}/status", api_get_payment_status)
     app.router.add_get("/api/payments", api_get_payments_history)
 

@@ -2685,6 +2685,7 @@ const app = (function () {
         const pStatus = (p.status || '').toUpperCase();
         const hasTxHash = Boolean(p.tx_hash);
         const isPending = (pStatus === 'PROCESSING' || pStatus === 'PENDING' || pStatus === 'AWAITING_USER_SIGNATURE');
+        const canUnlock = Boolean(p.can_unlock);
 
         let statusBadge = '<span class="badge badge-warning">PROCESSING</span>';
         if (pStatus === 'SUCCESS' || pStatus === 'CONFIRMED') {
@@ -2722,7 +2723,7 @@ const app = (function () {
             <td><span class="code-address">${formatShortAddress(p.from_address)}</span></td>
             <td><span class="code-address">${formatShortAddress(p.to_address)}</span></td>
             <td>${txLink}</td>
-            <td style="font-size:12px; color:var(--text-muted);">${timeStr}</td>
+            <td style="font-size:12px; color:var(--text-muted);">${timeStr}${canUnlock ? `<button type="button" class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="app.unlockPayment('${escapeHtml(p.payment_id || p.id)}')">Unlock</button>` : ''}</td>
           </tr>
         `;
 
@@ -2760,6 +2761,7 @@ const app = (function () {
                 <i data-lucide="copy" class="icon-sm"></i>
               </button>
             </div>` : ''}
+            ${canUnlock ? `<button type="button" class="btn btn-secondary btn-sm" style="width:100%; margin-top:8px; justify-content:center;" onclick="app.unlockPayment('${escapeHtml(p.payment_id || p.id)}')">Unlock payment</button>` : ''}
           </div>
         `;
         });
@@ -2799,6 +2801,18 @@ const app = (function () {
       showToast('Failed to load history: ' + err.message, 'error');
     } finally {
       if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+    }
+  }
+
+  async function unlockPayment(paymentId) {
+    if (!paymentId) return;
+    if (!window.confirm('Unlock this payment? This is allowed only because no transaction was sent to Celo.')) return;
+    try {
+      await apiRequest(`/api/payments/${encodeURIComponent(paymentId)}/cancel`, { method: 'POST' });
+      showToast('Payment unlocked. You can create a new payment.', 'success');
+      await Promise.all([loadPaymentsHistory(), loadWallets()]);
+    } catch (err) {
+      showToast(err.message || 'This payment cannot be unlocked yet.', 'warning');
     }
   }
 
@@ -3425,6 +3439,7 @@ const app = (function () {
     toggleWalletDetails,
     openWalletHistory,
     loadPaymentsHistory,
+    unlockPayment,
     loadProfile,
     loadAdminView,
     openAdminUserDetails,

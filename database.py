@@ -1511,7 +1511,9 @@ class Database:
                         error_message = 'Cancelled by user',
                         updated_at = CURRENT_TIMESTAMP
                     WHERE (payment_id = ? OR CAST(id AS TEXT) = ?)
-                      AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED');
+                      AND tx_hash IS NULL
+                      AND celo_fund_tx_hash IS NULL
+                      AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE');
                     """,
                     (pid_str, pid_str),
                 )
@@ -1525,7 +1527,9 @@ class Database:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE (payment_id = ? OR CAST(id AS TEXT) = ?)
                       AND (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                      AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED');
+                      AND tx_hash IS NULL
+                      AND celo_fund_tx_hash IS NULL
+                      AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE');
                     """,
                     [pid_str, pid_str] + user_ids + user_ids,
                 )
@@ -1543,7 +1547,9 @@ class Database:
                 f"""
                 SELECT payment_id, id FROM usat_payments
                 WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
-                  AND UPPER(status) NOT IN ('SUCCESS', 'CONFIRMED', 'CANCELLED')
+                  AND tx_hash IS NULL
+                  AND celo_fund_tx_hash IS NULL
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE')
                 ORDER BY created_at DESC LIMIT 1;
                 """,
                 user_ids + user_ids,
@@ -1559,7 +1565,10 @@ class Database:
                 SET status = 'CANCELLED',
                     error_message = 'Cancelled by user',
                     updated_at = CURRENT_TIMESTAMP
-                WHERE payment_id = ?;
+                WHERE payment_id = ?
+                  AND tx_hash IS NULL
+                  AND celo_fund_tx_hash IS NULL
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'AWAITING_USER_SIGNATURE');
                 """,
                 (pid,),
             )
