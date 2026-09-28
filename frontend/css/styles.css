@@ -1121,12 +1121,16 @@ i[data-lucide], svg.lucide {
   .wallets-grid[data-columns="3"] .wallet-address-row,
   .wallets-grid[data-columns="3"] .wallet-balance-row { flex-wrap: wrap; }
   .wallet-workspace-bar { align-items: stretch; flex-direction: column; gap: 7px; margin-bottom: 9px; }
-  .wallet-workspace-list { flex-wrap: wrap; overflow: visible; gap: 7px; }
+  .wallet-workspace-list { flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 7px; width: 100%; }
   .workspace-choice { min-height: 62px; padding: 10px; gap: 7px; }
   .workspace-choice-name { font-size: 13px; }
   .workspace-choice-balances strong { font-size: 12px; }
-  .workspace-current { width: 100%; padding: 8px 9px; gap: 7px; }
-  .workspace-current-balances { max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+  .workspace-current { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 10px; gap: 7px 10px; }
+  .workspace-current-name { min-width: 0; }
+  .workspace-current-name strong { font-size: 15px; }
+  .workspace-current-balances { max-width: none; overflow: visible; text-overflow: clip; }
+  .workspace-current .btn-copy { grid-column: 1; grid-row: 2; justify-self: start; }
+  .workspace-current .workspace-recover-btn { grid-column: 2; grid-row: 2; margin: 0; justify-self: end; }
   .workspace-back { padding: 4px 1px; font-size: 11px; }
   .workspace-recover-btn { margin-left: 0; padding: 5px 7px; font-size: 11px; }
   .wallet-workspace-bar > .btn { width: 100%; justify-content: center; }
