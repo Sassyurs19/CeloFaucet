@@ -508,10 +508,22 @@ class CeloClient:
                     return False, "", 0, f"Insufficient CELO for gas: {str(e).splitlines()[0]}"
                 return False, tx_hash, 0, "Transaction status is pending reconciliation."
             logger.info("USAT transfer broadcast from %s to %s: %s", from_addr, to_chk, tx_hash)
-            # Broadcasting is enough to return control to the customer promptly.
-            # The API stores this hash as CONFIRMING and validates the receipt in
-            # the status endpoint; it never treats this as a completed payment.
-            return False, tx_hash, 0, "Transaction status is pending reconciliation."
+
+            # Wait for the Celo receipt so the normal flow can show the completed
+            # payment screen as soon as the chain settles the transfer.
+            try:
+                receipt = await asyncio.to_thread(
+                    self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=90
+                )
+            except Exception:
+                return False, tx_hash, 0, "Transaction status is pending reconciliation."
+            status = receipt.get("status", 0)
+            block_num = receipt.get("blockNumber", 0)
+
+            if status == 1:
+                logger.info("USAT transfer confirmed at block %d: %s", block_num, tx_hash)
+                return True, tx_hash, block_num, ""
+            return False, tx_hash, block_num, "USAT transfer reverted on blockchain."
 
         except Exception as e:
             clean_err = str(e).split("\n")[0]
