@@ -2102,11 +2102,27 @@ const app = (function () {
   }
 
   function showPaymentConfirming(paymentId, wallet, recipient, amount) {
-    setPaymentStep(3, 'Your transfer was submitted. Confirming it on Celo now…');
+    setPaymentStep(3, 'Transfer submitted to Celo. Confirmation will finish automatically.');
+    const headerTitle = document.getElementById('pay-modal-header-title');
+    const titleEl = document.getElementById('pay-progress-title');
     const actionBtn = document.getElementById('btn-pay-modal-action');
     const closeBtn = document.getElementById('btn-close-pay-modal');
-    if (actionBtn) actionBtn.style.display = 'none';
-    if (closeBtn) closeBtn.style.display = 'none';
+    const linkCont = document.getElementById('pay-tx-link-container');
+    const linkEl = document.getElementById('pay-tx-link');
+    const txHash = state.activePayment?.tx_hash;
+    if (headerTitle) headerTitle.textContent = 'Transfer Submitted';
+    if (titleEl) titleEl.textContent = 'Submitted to Celo';
+    if (txHash && linkCont && linkEl) {
+      linkCont.style.display = 'flex';
+      linkEl.href = `${CELO_EXPLORER_BASE}${txHash}`;
+      linkEl.textContent = 'View transaction';
+    }
+    if (actionBtn) {
+      actionBtn.style.display = 'block';
+      actionBtn.textContent = 'Continue';
+      actionBtn.onclick = () => closeModal('modal-payment-progress');
+    }
+    if (closeBtn) closeBtn.style.display = 'block';
 
     const checkStatus = async () => {
       try {
