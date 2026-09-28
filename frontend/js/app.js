@@ -1885,7 +1885,11 @@ const app = (function () {
         showPaymentConfirming(pendingPaymentId, wallet, recipient, amount);
         return;
       }
-      if (err.status === 409 && err.response?.can_unlock && pendingPaymentId) {
+      // Older Render instances and cached API responses may not include the
+      // can_unlock flag.  The server-side unlock endpoint independently checks
+      // that no Celo transaction or gas-funding hash exists, so presenting the
+      // action is safe and avoids trapping the customer on a Dismiss-only page.
+      if (err.status === 409 && pendingPaymentId) {
         showPaymentUnlockRequired(pendingPaymentId);
         return;
       }
@@ -2125,7 +2129,7 @@ const app = (function () {
     const closeBtn = document.getElementById('btn-close-pay-modal');
     if (iconCont) iconCont.innerHTML = '<i data-lucide="unlock" class="icon-lg" style="color:var(--accent-blue);"></i>';
     if (titleEl) titleEl.textContent = 'Payment needs unlocking';
-    if (descEl) descEl.textContent = 'An earlier wallet-signature request was not sent to Celo. Unlock it to try again.';
+    if (descEl) descEl.textContent = 'Clear the earlier request to try again. The server will refuse this if anything was sent to Celo.';
     if (actionBtn) {
       actionBtn.style.display = 'block';
       actionBtn.textContent = 'Unlock payment';
