@@ -603,12 +603,20 @@ class CeloClient:
     ) -> tuple[bool, int, str]:
         """Verify an ERC-20 Transfer log against the server-side payment intent."""
         try:
-            if await self.get_chain_id() != self.expected_chain_id:
-                return False, 0, "Incorrect blockchain network."
-            receipt = await asyncio.to_thread(self._w3.eth.get_transaction_receipt, tx_hash)
+            # Receipt reads must have the same Celo-Mainnet failover protection
+            # as balance reads.  A single slow public RPC must not leave an
+            # already-mined transfer endlessly in the confirming state.
+            connected, _ = await self.verify_network()
+            if not connected:
+                return False, 0, "Transaction status is pending reconciliation."
+            receipt = await self._read_with_fallback(
+                lambda: self._w3.eth.get_transaction_receipt(tx_hash)
+            )
             if not receipt or receipt.get("status") != 1:
                 return False, 0, "Transaction is not successfully confirmed."
-            transaction = await asyncio.to_thread(self._w3.eth.get_transaction, tx_hash)
+            transaction = await self._read_with_fallback(
+                lambda: self._w3.eth.get_transaction(tx_hash)
+            )
             if Web3.to_checksum_address(transaction["from"]).lower() != Web3.to_checksum_address(from_address).lower():
                 return False, 0, "Transaction sender does not match the selected wallet."
             events = await asyncio.to_thread(self._usat_contract.events.Transfer().process_receipt, receipt)

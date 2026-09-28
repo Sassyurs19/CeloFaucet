@@ -67,8 +67,9 @@ async def reconcile_broadcast_payment(payment: dict) -> dict:
         await db.update_usat_payment_status(
             payment_id, "SUCCESS", tx_hash=tx_hash, block_number=block_number, error_message=None
         )
-    elif detail == "Transaction is not successfully confirmed.":
-        # A receipt was found and reverted. This is final and permits a new intent.
+    elif detail != "Transaction status is pending reconciliation.":
+        # A mined/reverted receipt or a receipt that does not match the protected
+        # intent is final.  Do not leave the customer in an endless spinner.
         await db.update_usat_payment_status(payment_id, "FAILED", tx_hash=tx_hash, error_message=detail)
     else:
         # Missing receipts, RPC outages, or verification delays are uncertain.
