@@ -1293,14 +1293,15 @@ const app = (function () {
     const totalUsdtFormatted = `$${totalUsdt.toFixed(2)}`;
     const dashTotal = document.getElementById('dash-total-usdt-balance');
     const dashCount = document.getElementById('dash-wallets-count');
-    const walSummaryUsdt = document.getElementById('wallets-summary-usdt');
+    const walletTotalUsdt = document.getElementById('wallets-total-usdt');
     const walSummaryCount = document.getElementById('wallets-summary-count');
     if (dashTotal) dashTotal.textContent = totalUsdtFormatted;
     if (dashCount) dashCount.textContent = state.wallets.length;
-    if (walSummaryUsdt) walSummaryUsdt.textContent = totalUsdtFormatted;
+    const hasUnavailableWalletBalance = state.wallets.some((wallet) => !hasLiveWalletBalance(wallet));
+    if (walletTotalUsdt) walletTotalUsdt.textContent = hasUnavailableWalletBalance ? 'Balance unavailable' : `${totalUsdtFormatted} USAT`;
     if (walSummaryCount) walSummaryCount.textContent = state.wallets.length;
     setBalanceTone(dashTotal, totalUsdt);
-    setBalanceTone(walSummaryUsdt, totalUsdt);
+    setBalanceTone(walletTotalUsdt, hasUnavailableWalletBalance ? null : totalUsdt);
   }
 
   function toggleWalletDropdownCustom(event) {

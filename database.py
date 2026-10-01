@@ -1452,6 +1452,25 @@ class Database:
                 """,
                 user_ids + user_ids,
             )
+            # Older application releases could leave a PROCESSING/CONFIRMING
+            # record behind after a local failure, even though neither a USAT
+            # transaction nor a gas-funding transaction was ever broadcast.
+            # These records are provably not reconcilable on Celo and must not
+            # permanently lock a long-standing phone/password account.
+            await conn.execute(
+                f"""
+                UPDATE usat_payments
+                SET status = 'EXPIRED',
+                    error_message = 'Expired legacy request without a recorded Celo transaction',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE (user_id IN ({placeholders}) OR telegram_id IN ({placeholders}))
+                  AND UPPER(status) IN ('PROCESSING', 'PENDING', 'CONFIRMING')
+                  AND tx_hash IS NULL
+                  AND celo_fund_tx_hash IS NULL
+                  AND created_at < datetime('now', '-2 minutes');
+                """,
+                user_ids + user_ids,
+            )
             await conn.commit()
 
             async with conn.execute(
